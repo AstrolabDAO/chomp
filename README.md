@@ -1,8 +1,8 @@
 <div align="center">
   <img border-radius="25px" max-height="250px" src="./banner.png" />
-  <h1>Collector</h1>
+  <h1>The Collector</h1>
   <p>
-    <strong>by <a href="https://astrolab.fi">Astrolab DAO<a></strong>
+    <strong>by <a href="https://astrolab.fi">Astrolab DAO & friends<a></strong>
   </p>
   <p>
     <!-- <a href="https://github.com/AstrolabDAO/collector/actions"><img alt="Build Status" src="https://github.com/AstrolabDAO/collector/actions/workflows/tests.yaml/badge.svg" /></a> -->
