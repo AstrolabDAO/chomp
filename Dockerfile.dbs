@@ -1,0 +1,52 @@
+# Use a lightweight version of Ubuntu as the base
+FROM ubuntu:20.04
+
+# Avoid prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Define environment variables for configuration
+ENV TAOS_PORT=6030 \
+    TAOS_REST_PORT=6031 \
+    TDENGINE_PORT_3=6041 \
+    TDENGINE_PORT_4=6042 \
+    REDIS_PORT=6379 \
+    REDIS_PASS=pass \
+    REDIS_DUMP_FREQUENCY=60 \
+    REDIS_DUMP_SIZE="50mb" \
+    TAOS_PASS=pass
+
+# Install necessary packages and TDengine
+RUN apt-get update && apt-get install -y \
+    wget \
+    gnupg \
+    software-properties-common \
+    lsb-release \
+    redis-server && \
+    wget -qO - http://repos.taosdata.com/tdengine.key | apt-key add - && \
+    echo "deb [arch=amd64] http://repos.taosdata.com/tdengine-stable stable main" | tee /etc/apt/sources.list.d/tdengine-stable.list && \
+    apt-get update && \
+    apt-get install -y tdengine
+
+# Configure Redis to use the environment variables
+# RUN sed -i "s/^daemonize yes/daemonize no/" /etc/redis/redis.conf \
+#     && sed -i "s/^protected-mode yes/protected-mode no/" /etc/redis/redis.conf \
+RUN echo "port $REDIS_PORT" >> /etc/redis/redis.conf \
+    && echo "requirepass $REDIS_PASS" >> /etc/redis/redis.conf \
+    && echo "save $REDIS_DUMP_FREQUENCY $REDIS_DUMP_SIZE" >> /etc/redis/redis.conf
+
+# Configure TDengine to use the environment variables (>> /etc/taos/taos.cfg cf. https://github.com/glzhao89/auto_taos_cfg/blob/master/taos.full.cfg)
+# TODO
+
+# Set up initial SQL commands for TDengine
+RUN echo "ALTER USER root PASS '$TAOS_PASS';" > /init_taos.sql \
+    && echo "CREATE USER rw_user PASS 'rw_password';" >> /init_taos.sql \
+    && echo "GRANT SELECT, INSERT ON db.* TO rw_user;" >> /init_taos.sql
+
+# Expose necessary ports
+EXPOSE $REDIS_PORT $TAOS_PORT $TAOS_REST_PORT $TDENGINE_PORT_3 $TDENGINE_PORT_4
+
+# Start Redis and TDengine, run SQL script to set password
+CMD service redis-server start && \
+    /usr/bin/taosd && \
+    sleep 10 && \
+    taos -s "source /init_taos.sql"
