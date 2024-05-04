@@ -1,52 +1,132 @@
-# Use a lightweight version of Ubuntu as the base
-FROM ubuntu:20.04
+# Build command: docker build -f Dockerfile.dbs -t collector-dbs .
+# Run command: docker run -d collector-dbs --name collector-dbs-1
 
-# Avoid prompts during package installation
-ENV DEBIAN_FRONTEND=noninteractive
+# 1. Redis+TDEngine base debian images (transient)
+FROM tdengine/tdengine:3.2.3.0 as tdengine-base
+FROM redis:7.2.4-bookworm as redis-base
 
-# Define environment variables for configuration
-ENV TAOS_PORT=6030 \
-    TAOS_REST_PORT=6031 \
-    TDENGINE_PORT_3=6041 \
-    TDENGINE_PORT_4=6042 \
+# 2. Final image - ubuntu 24.04 (persistent)
+FROM ubuntu:noble
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=UTC \
+    DB_MAX_CONNECTIONS=100 \
+    TAOS_HOST=localhost \
+    TAOS_PORT=6030 \
+    TAOS_MASTER_HOST=localhost \
+    TAOS_MASTER_PORT=6030 \
+    REDIS_HOST=localhost \
     REDIS_PORT=6379 \
-    REDIS_PASS=pass \
-    REDIS_DUMP_FREQUENCY=60 \
-    REDIS_DUMP_SIZE="50mb" \
-    TAOS_PASS=pass
+    REDIS_MASTER_HOST=localhost \
+    REDIS_MASTER_PORT=16379 \
+    REDIS_DUMP_SETTING="3600 1 300 100 60 10000" \
+    REDIS_MAX_RAM=1G \
+    DB_ROOT_USER=root \
+    DB_ROOT_PASS=pass \
+    DB_RW_USER=rw \
+    DB_RW_PASS=pass \
+    DB_MAX_ROWS_PER_QUERY=1000000
 
-# Install necessary packages and TDengine
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    software-properties-common \
-    lsb-release \
-    redis-server && \
-    wget -qO - http://repos.taosdata.com/tdengine.key | apt-key add - && \
-    echo "deb [arch=amd64] http://repos.taosdata.com/tdengine-stable stable main" | tee /etc/apt/sources.list.d/tdengine-stable.list && \
-    apt-get update && \
-    apt-get install -y tdengine
+# Set the timezone
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
-# Configure Redis to use the environment variables
-# RUN sed -i "s/^daemonize yes/daemonize no/" /etc/redis/redis.conf \
-#     && sed -i "s/^protected-mode yes/protected-mode no/" /etc/redis/redis.conf \
-RUN echo "port $REDIS_PORT" >> /etc/redis/redis.conf \
-    && echo "requirepass $REDIS_PASS" >> /etc/redis/redis.conf \
-    && echo "save $REDIS_DUMP_FREQUENCY $REDIS_DUMP_SIZE" >> /etc/redis/redis.conf
+# Create data directories
+RUN mkdir -p /data/taos/log /data/redis/log
 
-# Configure TDengine to use the environment variables (>> /etc/taos/taos.cfg cf. https://github.com/glzhao89/auto_taos_cfg/blob/master/taos.full.cfg)
-# TODO
+# Copy TDengine binaries from base image
+COPY --from=tdengine-base /usr/bin/taosd /usr/bin/taosd
 
-# Set up initial SQL commands for TDengine
-RUN echo "ALTER USER root PASS '$TAOS_PASS';" > /init_taos.sql \
-    && echo "CREATE USER rw_user PASS 'rw_password';" >> /init_taos.sql \
-    && echo "GRANT SELECT, INSERT ON db.* TO rw_user;" >> /init_taos.sql
+# Configure TDengine
+COPY <<EOF /init_taos.sql
+CREATE USER $DB_ROOT_USER PASS $DB_ROOT_PASS;
+CREATE USER $DB_RW_USER PASS $DB_RW_PASS;
+GRANT SELECT, INSERT ON db.* TO $DB_RW_USER;
+EOF
 
-# Expose necessary ports
-EXPOSE $REDIS_PORT $TAOS_PORT $TAOS_REST_PORT $TDENGINE_PORT_3 $TDENGINE_PORT_4
+COPY <<EOF /etc/taos/taos.cfg
+fqdn                    $TAOS_HOST
+serverPort              $TAOS_PORT
+firstEp                 $TAOS_MASTER_HOST:$TAOS_MASTER_PORT
+numOfRpcSessions        $DB_MAX_CONNECTIONS
+maxShellConns           $DB_MAX_CONNECTIONS
+tmqMaxTopicNum          100
+maxTsmaNum              5
+dataDir                 /data/taos
+logDir                  /data/taos/log
+tempDir                 /tmp
+logKeepDays             30
+telemetryReporting      0
+crashReporting          0
+locale                  C.UTF-8
+charset                 UTF-8
+timezone                UTC
+comp                    1
+countAlwaysReturnValue  1
+maxNumOfDistinctRes     $DB_MAX_ROWS_PER_QUERY
+ttlChangeOnWrite        1
+EOF
 
-# Start Redis and TDengine, run SQL script to set password
-CMD service redis-server start && \
-    /usr/bin/taosd && \
-    sleep 10 && \
-    taos -s "source /init_taos.sql"
+# Copy TDengine binaries from base image
+COPY --from=redis-base /usr/local/bin/redis-server /usr/local/bin/redis-server
+COPY --from=redis-base /usr/local/bin/redis-cli /usr/local/bin/redis-cli
+
+# Configure Redis
+COPY <<EOF /etc/redis/users.acl
+    user default off -@all
+    user $DB_ROOT_USER on +@all ~* >$DB_ROOT_PASS
+    user $DB_RW_USER on +@stream +@pubsub +@read +@write ~* >$DB_RW_PASS
+EOF
+
+COPY <<EOF /etc/redis/redis.conf
+bind                    $REDIS_HOST -::1
+port                    $REDIS_PORT
+maxclients              $DB_MAX_CONNECTIONS
+aclfile                 /etc/redis/users.acl
+masteruser              $DB_ROOT_USER
+masterauth              $DB_ROOT_PASS
+cluster-port            0
+cluster-enabled         no
+replica-read-only       yes
+cluster-port            0
+replicaof               $REDIS_MASTER_HOST $REDIS_PORT
+protected-mode          no
+save                    $REDIS_DUMP_SETTING
+rdbcompression          yes
+dbfilename              dump.rdb
+stop-writes-on-bgsave-error yes
+timeout                 0
+databases               1
+repl-timeout            60
+dir                     /data/redis
+logfile                 /data/redis/log/redis.log
+maxmemory               $REDIS_MAX_RAM
+maxmemory-policy        allkeys-lru
+maxmemory-samples       5
+maxmemory-eviction-tenacity 10
+appendonly              no
+appendfsync             no
+activedefrag            no
+active-defrag-cycle-min 1
+active-defrag-cycle-max 25
+EOF
+
+# Expose ports
+EXPOSE $REDIS_PORT $TAOS_PORT
+
+# DBs start script
+COPY <<EOF /usr/local/bin/start-dbs.sh
+#!/bin/bash
+set -e
+redis-server /etc/redis/redis.conf
+taosd -c /etc/taos
+sleep 5
+taos -s "source /init_taos.sql"
+rm /init_taos.sql
+# Keep container alive
+tail -f /dev/null
+EOF
+RUN chmod +x /usr/local/bin/start-dbs.sh
+
+# Set entrypoint to the above script
+ENTRYPOINT ["/usr/local/bin/start-dbs.sh"]

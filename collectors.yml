@@ -33,7 +33,7 @@ apis:
 # evm collectors
 evms:
   - name: DummyEvmContractCollector
-    interval: "9 * * * *" # cron expression
+    interval: "* * * * *" # cron expression
     type: series # time indexed data
     inplace: false
     data:
