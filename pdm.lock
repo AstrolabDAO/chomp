@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:9f23cf9e20cb9b2921a7874ac1cd43570e1811300aab157c6937af6f74477f7b"
+content_hash = "sha256:eba3be8b4883f11206788d056e486284812e4be40477a58b5d8250dd5dae5d89"
 
 [[package]]
 name = "aiohttp"
@@ -142,6 +142,20 @@ files = [
 ]
 
 [[package]]
+name = "beautifulsoup4"
+version = "4.12.3"
+requires_python = ">=3.6.0"
+summary = "Screen-scraping library"
+groups = ["default"]
+dependencies = [
+    "soupsieve>1.2",
+]
+files = [
+    {file = "beautifulsoup4-4.12.3-py3-none-any.whl", hash = "sha256:b80878c9f40111313e55da8ba20bdba06d8fa3969fc68304167741bbf9e082ed"},
+    {file = "beautifulsoup4-4.12.3.tar.gz", hash = "sha256:74e3d1928edc070d21748185c46e3fb33490f22f52a3addee9aee0f4f7781051"},
+]
+
+[[package]]
 name = "bitarray"
 version = "2.9.2"
 summary = "efficient arrays of booleans -- C extension"
@@ -198,6 +212,19 @@ files = [
     {file = "bitarray-2.9.2-pp39-pypy39_pp73-manylinux_2_5_i686.manylinux1_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:461a3dafb9d5fda0bb3385dc507d78b1984b49da3fe4c6d56c869a54373b7008"},
     {file = "bitarray-2.9.2-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:393cb27fd859af5fd9c16eb26b1c59b17b390ff66b3ae5d0dd258270191baf13"},
     {file = "bitarray-2.9.2.tar.gz", hash = "sha256:a8f286a51a32323715d77755ed959f94bef13972e9a2fe71b609e40e6d27957e"},
+]
+
+[[package]]
+name = "bs4"
+version = "0.0.2"
+summary = "Dummy package for Beautiful Soup (beautifulsoup4)"
+groups = ["default"]
+dependencies = [
+    "beautifulsoup4",
+]
+files = [
+    {file = "bs4-0.0.2-py2.py3-none-any.whl", hash = "sha256:abf8742c0805ef7f662dce4b51cca104cffe52b835238afc169142ab9b3fbccc"},
+    {file = "bs4-0.0.2.tar.gz", hash = "sha256:a48685c58f50fe127722417bae83fe6badf500d54b55f7e39ffe43b798653925"},
 ]
 
 [[package]]
@@ -2234,6 +2261,17 @@ groups = ["default"]
 files = [
     {file = "sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0"},
     {file = "sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88"},
+]
+
+[[package]]
+name = "soupsieve"
+version = "2.5"
+requires_python = ">=3.8"
+summary = "A modern CSS selector implementation for Beautiful Soup."
+groups = ["default"]
+files = [
+    {file = "soupsieve-2.5-py3-none-any.whl", hash = "sha256:eaa337ff55a1579b6549dc679565eac1e3d000563bcb1c8ab0d0fefbc0c2cdc7"},
+    {file = "soupsieve-2.5.tar.gz", hash = "sha256:5663d5a7b3bfaeee0bc4372e7fc48f9cff4940b3eec54a6451cc5299f1097690"},
 ]
 
 [[package]]

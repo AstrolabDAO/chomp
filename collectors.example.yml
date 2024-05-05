@@ -1,40 +1,40 @@
 # collectors.yml
 
 # html scrappers
-scrappers:
+scrapper:
   - name: DummyHtmlScrapper
     interval: "H1" # S10, S30, M1, M5, M15, M30, H1, H2, H4, H6, H12, D1, W1, M1, Y1
-    type: document # document, series, timeseries
+    resource_type: document # document, series, timeseries
     inplace: true # false for time series
     data:
       - name: ScrappedText1
         type: text
         target: https://dummy.com
         selector: .dummy1 # css selector to extract data
-        transformer: "{self}.strip()" # python code, optional
+        transformers: [strip]
       - name: ScrappedText2
         type: text
         target: https://dummy.com
         selector: .dummy2
 
 # rest api collectors
-apis:
+api:
   - name: DummyJsonCollector
     interval: "* * * * *" # cron expression
-    type: document
+    resource_type: document
     inplace: false
     data:
       - name: JsonValue1
         type: float
         target: https://api.dummy.com
         selector: dummy1.field1
-        transformer: "{self} / 100"
+        transformers: ["{self} / 100"]
 
 # evm collectors
-evms:
+evm:
   - name: DummyEvmContractCollector
     interval: "* * * * *" # cron expression
-    type: series # time indexed data
+    resource_type: series # auto increment indexed data
     inplace: false
     data:
       - name: EvmValue1
@@ -42,7 +42,7 @@ evms:
         target: "137:0x1234567890123456789012345678901234567890" # chainId:address
         selector: balanceOf(address) # function signature
         parameters: ["0x1234567890123456789012345678901234567890"] # function parameters
-        transformer: "{self:median('w1')}"
+        transformers: ["{self::median('W1')}"]
       - name: EvmValue2
         type: float
         target: "137:0x1234567890123456789012345678901234567890" # chainId:address
@@ -50,7 +50,7 @@ evms:
         parameters: []
       - name: EvmMedian1
         type: float
-        transformer: "{EvmValue1:median('w1')}" # no need for selector if the value is computed
+        transformers: ["{EvmValue1::median('W1')}"] # no need for selector if the value is computed
 
 # other collectors
 solana: []

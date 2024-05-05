@@ -1,7 +1,8 @@
 from typing import Type
 from taos import TaosConnection, TaosCursor, TaosResult, TaosStmt, connect, new_bind_params, new_multi_binds
 from taos.tmq import Message, Consumer
-from ..model import FieldType, Precision, Resource, TsdbAdapter
+from utils import interval_to_sql
+from ..model import FieldType, Interval, Precision, Resource, TsdbAdapter
 from os import environ as env
 
 TYPES: dict[FieldType, str] = {
@@ -66,15 +67,15 @@ class TaosAdapter(TsdbAdapter):
     if not self.conn:
       self.connect()
     table = name or schema.name
-    base = "CREATE TABLE IF NOT EXISTS" if force else "CREATE TABLE"
-    fields = ", ".join([f"{field.name} {TYPES[field._type]}" for field in schema.data])
+    base = "CREATE TABLE IF NOT EXISTS" if force else "CREATE TABLE;"
+    fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in schema.data])
     self.cursor.execute(f"{base} {table} ({fields})")
 
   def insert(self, data: Resource, table=""):
     table = table or data.name
     fields = ", ".join([field.name for field in data.data])
     values = ", ".join([f"'{field.value}'" for field in data.data])
-    self.cursor.execute(f"INSERT INTO {table} ({fields}) VALUES ({values})")
+    self.cursor.execute(f"INSERT INTO {table} ({fields}) VALUES ({values});")
 
   def insert_many(self, els: list[Resource], table=""):
     if not self.conn:
@@ -89,7 +90,16 @@ class TaosAdapter(TsdbAdapter):
     stmt.bind(params)
     stmt.execute()
 
-  def fetch(self, table: str, query: str):
+  def fetch(self, query: str):
+    self.cursor.execute(query)
+    return self.cursor.fetchall()
+
+  def fetch_series(self, table: str, from_date: int, to_date: int, interval: Interval, fields=[]) -> list:
+    if not fields or len(fields) == 0:
+      fields = ["*"]
+    # query = f"SELECT {', '.join(fields)} FROM {table} WHERE ts >= {from_date} AND ts <= {to_date} GROUP BY ts DIV {interval} ORDER BY ts"
+    sql_tf = interval_to_sql(interval)
+    query = f"SELECT {', '.join(fields)} FROM {table} WHERE ts >= {from_date} AND ts <= {to_date} INTERVAL({sql_tf}) SLIDING({sql_tf});"
     self.cursor.execute(query)
     return self.cursor.fetchall()
 

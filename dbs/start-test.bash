@@ -22,7 +22,7 @@ sleep 5
 
 # Test redis connection if redis-cli is locally installed, else warn user and print test command
 if command -v redis-cli &> /dev/null; then
-    echo "Testing connection to Redis..."
+    echo "Testing local connection to Redis..."
     # Run command silently and check if it returns "PONG"
     output=$(redis-cli -h localhost -p $REDIS_PORT --user $DB_RW_USER --pass $DB_RW_PASS ping 2>/dev/null)
     if [ "$output" == "PONG" ]; then
@@ -37,7 +37,7 @@ fi
 
 # Test tdengine connection if taos cli is locally installed, else warn user and print test command
 if command -v taos &> /dev/null; then
-    echo "Testing connection to TDengine..."
+    echo "Testing local connection to TDengine..."
     # Run command silently and check if it returns "2: service ok"
     output=$(taos -h localhost -P $TAOS_PORT -u $DB_RW_USER -p$DB_RW_PASS -k)
     if [[ "$output" == *"2: service ok"* ]]; then
