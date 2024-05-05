@@ -1,0 +1,24 @@
+[project]
+name = "the-collector"
+version = "0.1.0"
+description = "Lightweight data retriever and archiver, start collecting web2/3 data in minutes"
+authors = [
+    # {name = "JakeTheSlug", email = "jake@astrolab.fi"},
+]
+dependencies = [
+    "redis>=5.0.4",
+    "taospy>=2.7.13",
+    "arq>=0.25.0",
+    "eth-ape>=0.7.19",
+    "python-dotenv>=1.0.1",
+]
+requires-python = ">=3.11"
+readme = "README.md"
+license = {text = "MIT"}
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+distribution = true

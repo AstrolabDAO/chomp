@@ -1,32 +1,43 @@
 # Build command: docker build -f Dockerfile.dbs -t collector-dbs .
 # Run command: docker run -d collector-dbs --name collector-dbs-1
 
-# 1. Redis+TDEngine base debian images (transient)
+# 1. Prepare TDEngine binaries and libs from base debian image (transient)
 FROM tdengine/tdengine:3.2.3.0 as tdengine-base
-FROM redis:7.2.4-bookworm as redis-base
+RUN mkdir -p /deps
+RUN for bin in /usr/bin/taosd /usr/bin/taos; do \
+        ldd $bin | tr -s '[:space:]' | cut -d' ' -f3 | grep '^/' | xargs -I {} cp -u {} /deps/; \
+    done
 
-# 2. Final image - ubuntu 24.04 (persistent)
+# 2. Prepare Redis binaries and libs from base debian image (transient)
+FROM redis:7.2.4-bookworm as redis-base
+RUN mkdir -p /deps
+RUN for bin in /usr/local/bin/redis-server /usr/local/bin/redis-cli; do \
+        ldd $bin | tr -s '[:space:]' | cut -d' ' -f3 | grep '^/' | xargs -I {} cp -u {} /deps/; \
+    done
+
+# 3. Final image - ubuntu 24.04 (persistent)
 FROM ubuntu:noble
 
 # Set environment variables
+# NB: these are baked into the image if used in COPY commands and won't be updated by .env file at runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     DB_MAX_CONNECTIONS=100 \
-    TAOS_HOST=localhost \
-    TAOS_PORT=6030 \
-    TAOS_MASTER_HOST=localhost \
-    TAOS_MASTER_PORT=6030 \
-    REDIS_HOST=localhost \
-    REDIS_PORT=6379 \
-    REDIS_MASTER_HOST=localhost \
-    REDIS_MASTER_PORT=16379 \
-    REDIS_DUMP_SETTING="3600 1 300 100 60 10000" \
-    REDIS_MAX_RAM=1G \
     DB_ROOT_USER=root \
     DB_ROOT_PASS=pass \
     DB_RW_USER=rw \
     DB_RW_PASS=pass \
-    DB_MAX_ROWS_PER_QUERY=1000000
+    DB_MAX_ROWS_PER_QUERY=1000000 \
+    REDIS_HOST=0.0.0.0 \
+    REDIS_PORT=40001 \
+    REDIS_MASTER_HOST=0.0.0.0 \
+    REDIS_MASTER_PORT=40001 \
+    REDIS_DUMP_SETTING="3600 1 300 100 60 10000" \
+    REDIS_MAX_RAM=1G \
+    TAOS_HOST=0.0.0.0 \
+    TAOS_PORT=40002 \
+    TAOS_MASTER_HOST=0.0.0.0 \
+    TAOS_MASTER_PORT=40002
 
 # Set the timezone
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
@@ -35,13 +46,15 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN mkdir -p /data/taos/log /data/redis/log
 
 # Copy TDengine binaries from base image
+COPY --from=tdengine-base /deps/* /usr/lib/
 COPY --from=tdengine-base /usr/bin/taosd /usr/bin/taosd
+COPY --from=tdengine-base /usr/bin/taos /usr/bin/taos
 
 # Configure TDengine
-COPY <<EOF /init_taos.sql
-CREATE USER $DB_ROOT_USER PASS $DB_ROOT_PASS;
-CREATE USER $DB_RW_USER PASS $DB_RW_PASS;
-GRANT SELECT, INSERT ON db.* TO $DB_RW_USER;
+COPY <<EOF /tmp/init_taos.sql
+ALTER USER $DB_ROOT_USER PASS "$DB_ROOT_PASS";
+CREATE USER $DB_RW_USER PASS "$DB_RW_PASS" SYSINFO 0;
+GRANT READ, WRITE ON *.* TO $DB_RW_USER;
 EOF
 
 COPY <<EOF /etc/taos/taos.cfg
@@ -64,18 +77,20 @@ timezone                UTC
 comp                    1
 countAlwaysReturnValue  1
 maxNumOfDistinctRes     $DB_MAX_ROWS_PER_QUERY
+maxInsertBatchRows      $DB_MAX_ROWS_PER_QUERY
 ttlChangeOnWrite        1
 EOF
 
-# Copy TDengine binaries from base image
+# Copy Redis binaries from base image
+COPY --from=redis-base /deps/* /usr/lib/
 COPY --from=redis-base /usr/local/bin/redis-server /usr/local/bin/redis-server
 COPY --from=redis-base /usr/local/bin/redis-cli /usr/local/bin/redis-cli
 
 # Configure Redis
 COPY <<EOF /etc/redis/users.acl
-    user default off -@all
-    user $DB_ROOT_USER on +@all ~* >$DB_ROOT_PASS
-    user $DB_RW_USER on +@stream +@pubsub +@read +@write ~* >$DB_RW_PASS
+user default off -@all
+user $DB_ROOT_USER on +@all ~* >$DB_ROOT_PASS
+user $DB_RW_USER on +@stream +@pubsub +@read +@write +@connection ~* >$DB_RW_PASS
 EOF
 
 COPY <<EOF /etc/redis/redis.conf
@@ -85,12 +100,11 @@ maxclients              $DB_MAX_CONNECTIONS
 aclfile                 /etc/redis/users.acl
 masteruser              $DB_ROOT_USER
 masterauth              $DB_ROOT_PASS
+protected-mode          no
 cluster-port            0
 cluster-enabled         no
-replica-read-only       yes
-cluster-port            0
-replicaof               $REDIS_MASTER_HOST $REDIS_PORT
-protected-mode          no
+# replicaof               $REDIS_MASTER_HOST $REDIS_MASTER_PORT
+# replica-read-only       yes
 save                    $REDIS_DUMP_SETTING
 rdbcompression          yes
 dbfilename              dump.rdb
@@ -118,13 +132,12 @@ EXPOSE $REDIS_PORT $TAOS_PORT
 COPY <<EOF /usr/local/bin/start-dbs.sh
 #!/bin/bash
 set -e
-redis-server /etc/redis/redis.conf
-taosd -c /etc/taos
+redis-server /etc/redis/redis.conf &
+taosd -c /etc/taos >/dev/null 2>&1 &
 sleep 5
-taos -s "source /init_taos.sql"
-rm /init_taos.sql
-# Keep container alive
-tail -f /dev/null
+taos -h $TAOS_HOST -P $TAOS_PORT -s "source /tmp/init_taos.sql;"
+rm /tmp/init_taos.sql
+tail -f /data/taos/log/taosd*log*
 EOF
 RUN chmod +x /usr/local/bin/start-dbs.sh
 

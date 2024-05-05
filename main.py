@@ -1,4 +1,7 @@
-from model import Resource, Collector, CollectorConfig
+import argparse
+
+from dotenv import find_dotenv, load_dotenv
+from src.model import Resource, Collector, CollectorConfig
 
 # 1. import resources.yml
 # 2. parse using the models
@@ -9,3 +12,14 @@ from model import Resource, Collector, CollectorConfig
 # 7. when collecting resources, apply transformers and retry conditions if any
 # 8. expose on config based generated endpoints
 # 9. done!
+
+def main():
+  pass
+
+if __name__ == "__main__":
+  args = argparse.ArgumentParser(description="TDengine data collector")
+  args.add_argument("--env", default=".env.test", help="Environment file")
+  args = args.parse_args()
+  env_file = find_dotenv(args.env)
+  load_dotenv(env_file)
+  main()
