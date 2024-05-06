@@ -2,40 +2,59 @@
 
 # html scrappers
 scrapper:
-  - name: DummyHtmlScrapper
-    interval: "H1" # S10, S30, M1, M5, M15, M30, H1, H2, H4, H6, H12, D1, W1, M1, Y1
-    resource_type: document # document, series, timeseries
-    inplace: true # false for time series
+  - name: TakeIchiConvoyStats
+    interval: Y1 # see model.py for available intervals
+    resource_type: value # value (inplace document), series, timeseries
+    target: https://en.wikipedia.org/wiki/Take_Ichi_convoy
     data:
-      - name: ScrappedText1
-        type: text
-        target: https://dummy.com
-        selector: .dummy1 # css selector to extract data
-        transformers: [strip]
-      - name: ScrappedText2
-        type: text
-        target: https://dummy.com
-        selector: .dummy2
+      - name: Dates
+        type: string
+        selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[4]/td/table/tbody/tr[1]/td # css selector or xpath
+      - name: AmericanTroups
+        type: string
+        selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[10]/td[1]
+      - name: JapaneseTroups
+        type: string
+        selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[10]/td[2]
+      - name: AmericanCasualties
+        type: string
+        selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[12]/td[1]
+      - name: JapaneseCasualties
+        type: string
+        selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[12]/td[2]
 
 # rest api collectors
 api:
-  - name: DummyJsonCollector
-    interval: "* * * * *" # cron expression
-    resource_type: document
-    inplace: false
+  - name: CoingeckoPriceFeeds
+    interval: m1
+    resource_type: timeseries
+    target: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,staked-ether,binancecoin,avalanche-2,wrapped-bitcoin,ripple,solana,the-open-network,polkadot,cardano,bitcoin-cash,matic-network,aptos,first-digital-usd,cosmos,mantle,optimism,arbitrum,sui,arweave,monero,ethena-usde,fantom,celestia,thorchain,coredaoorg,sei-network,usd-coin,tether,frax,dai,manta-network,celo,dogecoin,pepe,shiba-inu,dogwifcoin&vs_currencies=usd
     data:
-      - name: JsonValue1
-        type: float
-        target: https://api.dummy.com
-        selector: dummy1.field1
-        transformers: ["{self} / 100"]
+      - name: USDCUSD
+        type: float64
+        selector: .usd-coin.usd
+      - name: BTCUSDC
+        type: float64
+        selector: .bitcoin.usd
+        transformers: ["{self} * {USDCUSD}", "round2"]
+      - name: ETHUSDC
+        type: float64
+        selector: .ethereum.usd
+        transformers: ["{self} * {USDCUSD}", "round2"]
+      - name: DOGEUSDC
+        type: float64
+        selector: .dogecoin.usd
+        transformers: ["{self} * {USDCUSD}", "round4"]
+      - name: PEPEUSDC
+        type: float64
+        selector: .pepe.usd
+        transformers: ["{self} * {USDCUSD}", "round10"]
 
 # evm collectors
 evm:
   - name: DummyEvmContractCollector
-    interval: "* * * * *" # cron expression
-    resource_type: series # auto increment indexed data
-    inplace: false
+    interval: m15
+    resource_type: timeseries
     data:
       - name: EvmValue1
         type: float

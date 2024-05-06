@@ -5,14 +5,11 @@ from hashlib import sha256, md5
 from actions.load import load_series
 import numpy as np
 
-from ..model import Resource, ResourceField, TsdbAdapter
-from ..utils import interval_to_delta
+import src.state as state
+from src.model import Collector, Resource, ResourceField, Tsdb
+from src.utils import interval_to_delta, log_debug
 
-# Types
-BaseTransformer = callable[[Resource, str|int|float|bool|bytes], any]
-SeriesTransformer = callable[[Resource, np.ndarray|list], any]
-
-BASE_TRANSFORMERS: dict[str, BaseTransformer] = {
+BASE_TRANSFORMERS: dict[str, callable] = {
   "lower": lambda r, self: str(self).lower(),
   "upper": lambda r, self: str(self).upper(),
   "capitalize": lambda r, self: str(self).capitalize(),
@@ -35,12 +32,15 @@ BASE_TRANSFORMERS: dict[str, BaseTransformer] = {
   "hex": lambda r, self: hex(int(self))[2:], # int to hex
   "sha256digest": lambda r, self: sha256(str(self).encode()).hexdigest(),
   "md5digest": lambda r, self: md5(str(self).encode()).hexdigest(),
-  "round": lambda r, self: round(float(self)),
+  "round": lambda r, self: round(float(self)), # TODO: genericize to roundN
   "round2": lambda r, self: round(float(self), 2),
   "round4": lambda r, self: round(float(self), 4),
+  "round6": lambda r, self: round(float(self), 6),
+  "round8": lambda r, self: round(float(self), 8),
+  "round10": lambda r, self: round(float(self), 10),
 }
 
-SERIES_TRANSFORMERS: dict[str, SeriesTransformer] = {
+SERIES_TRANSFORMERS: dict[str, callable] = {
   "median": lambda r, series: np.median(series),
   "mean": lambda r, series: np.mean(series),
   "std": lambda r, series: np.std(series),
@@ -52,13 +52,13 @@ SERIES_TRANSFORMERS: dict[str, SeriesTransformer] = {
   "prod": lambda r, series: np.prod(series)
 }
 
-def apply_transformer(db: TsdbAdapter, resource: Resource, field: ResourceField, transformer: str|int|float|bool|bytes) -> any:
+def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> any:
   if not transformer:
     return field.value
 
   # Checks if single word and does not contain injected variables ('{' or '}')
   if bool(re.fullmatch(r"[^\s{}]+", transformer)):
-    return BASE_TRANSFORMERS.get(transformer)(resource, field.value)
+    return BASE_TRANSFORMERS.get(transformer)(c, field.value)
 
   # If transformer contains a series op "::", replace with the result of the series transformer
   if "{" in transformer:
@@ -85,35 +85,25 @@ def apply_transformer(db: TsdbAdapter, resource: Resource, field: ResourceField,
           target_field = field
         else:
           # filter the resource field that match the target
-          target_field = next((f for f in resource.data if f.name == target), None)
+          target_field = next((f for f in c.data if f.name == target), None)
           if not target_field:
             raise ValueError(f"Invalid transformer target: {target}")
         # step 7: extract the series from the target field
-        series = load_series(db, resource, from_date, interval=resource.interval, field=target_field)
+        series = load_series(c, from_date, interval=c.interval, field=target_field)
         # step 8: apply the series transformer
-        res = SERIES_TRANSFORMERS.get(fn)(resource, series)
+        res = SERIES_TRANSFORMERS.get(fn)(c, series)
         # step 9: replace the transformer with the result
         transformer = transformer.replace(group, res)
-      else:
-        # step 1: identify the target variable, word between '{' and '}'
-        search = re.search(r"\{(.+?)\}", transformer)
-        target = search.group(1) if search else None
-        # step 2: make sure that target is either self (field) or other resource field
-        if target == "self":
-          target_field = field
-        else:
-          # filter the resource field that match the target
-          target_field = next((f for f in resource.data if f.name == target), None)
-          if not target_field:
-            raise ValueError(f"Invalid transformer target: {target}")
-        # step 3: replace the transformer with the target value
-        transformer = transformer.replace(group, target_field.value)
   # eval the transformer after injecting all computed values
-  return eval(transformer.format(self=field.value))
+  return eval(transformer.format(self=field.value, **c.data_by_field))
 
-def transform(db: TsdbAdapter, r: Resource, f: ResourceField) -> any:
+def transform(c: Collector, f: ResourceField) -> any:
   if not f.transformers or len(f.transformers) == 0:
     return f.value
+  if state.verbose:
+    log_debug(f"{c.name}.{f.name} before chained transform [{']['.join(f.transformers)}]: {{{f.value}}}")
   for t in f.transformers:
-    f.value = apply_transformer(db, r, f, t)
+    f.value = apply_transformer(c, f, t)
+  if state.verbose:
+    log_debug(f"{c.name}.{f.name} after transform: {{{f.name}: {f.value}}}")
   return f.value

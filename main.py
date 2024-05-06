@@ -1,41 +1,43 @@
-import argparse
+# TODO in main():
+# 1. compare collectors.yml config with arq registered jobs (eg. by versionning each collector config in Redis)
+# 2. delete dangling jobs, update or create if necessary based on collector.id
+# 3. start env.MAX_TASKS workers to join arq worker pool (max 16 per instance)
+# 4: test arq cron scheduling + make sure jobs only run once and get picked up by new workers when prev fail
 
+import argparse
+from os import environ as env
+from typing import Type
 from dotenv import find_dotenv, load_dotenv
-import yaml
 from arq import create_pool, cron
 from arq.connections import RedisSettings
 from arq.worker import Worker
-import asyncio
-from src.model import CollectorType, Config, Resource, CollectorConfig, CollectorConfig
-from src.collectors.scrapper import collect as scrape_collect
-from src.collectors.api import collect as fetch_collect
-from src.collectors.evm import collect as evm_call_collect
+from src.model import CollectorType, Config, Resource, Collector, Collector, Tsdb, TsdbAdapter
+from src.actions.collect import collect
+import src.state as state
 
-
-# Helper function to load the configuration
-def load_config(filepath: str) -> Config:
-  with open(filepath, 'r') as file:
-    config_data = yaml.safe_load(file)
-  return Config.from_dict(config_data)
-
-COLLECTOR_BY_TYPE: dict[CollectorType, callable] = {
-  CollectorType.SCRAPPER: scrape_collect,
-  CollectorType.API: fetch_collect,
-  CollectorType.EVM: evm_call_collect
-}
+def get_adapter(adapter: str) -> Type[Tsdb]:
+  import src.adapters as adapters
+  implementations: dict[TsdbAdapter, Type[Tsdb]] = {
+    TsdbAdapter.TDENGINE: adapters.tdengine.Taos,
+  }
+  return implementations.get(TsdbAdapter(adapter.lower()), None)
 
 def main():
-  pass
-  # TODO:
-  # 1. compare config collector configs with arq registered jobs
-  # 2. delete dangling jobs, update or create when necessary based on unique jobId hash(name, target, selector, parameters, interval)
-  # 3. start the worker to join the worker pool and work on the updated jobs
-  # NB: each job should only be worked on once per interval (based on JobId hash)
+  tsdb_class = get_adapter(env.get("TSDB", "").lower())
+  if not tsdb_class:
+    raise ValueError(f"Missing or unsupported TSDB adapter, please use one of {', '.join([a.value for a in TsdbAdapter])}")
+
+  ### DEBUG: these are to be replaced by arq scheduling as defined in the file's TODO
+  state.tsdb = tsdb_class.connect()
+  collect({}, state.get_config().scrapper[0])
+  collect({}, state.get_config().api[0])
+  ###
 
 if __name__ == "__main__":
-  argparser = argparse.ArgumentParser(description="The collector retrieves, transforms and archives data from various sources.")
-  argparser.add_argument("--env", default=".env.test", help="Environment file")
+  argparser = argparse.ArgumentParser(description="The Collector retrieves, transforms and archives data from various sources.")
+  argparser.add_argument("-e", "--env", default=".env.test", help="Environment file")
+  argparser.add_argument("-v", "--verbose", default=True, help="Verbose output")
   args = argparser.parse_args()
-  env_file = find_dotenv(args.env)
-  load_dotenv(env_file)
+  state.verbose = args.verbose
+  load_dotenv(find_dotenv(args.env))
   main()

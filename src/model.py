@@ -1,12 +1,13 @@
 from dataclasses import dataclass, field
+from datetime import datetime
+from hashlib import md5
 from typing import Literal, Optional, List, Type
 from enum import Enum
 
 import numpy as np
-from utils import collector_id, field_id
 
 class ResourceType(str, Enum):
-  VALUE = 'value'  # e.g., document (json/text), binary, int, float, date, string...
+  VALUE = 'value'  # e.g., inplace document (json/text), binary, int, float, date, string...
   SERIES = 'series'  # increment indexed values
   TIMESERIES = 'timeseries'  # time indexed values
 
@@ -18,6 +19,13 @@ class CollectorType(str, Enum):
   SOLANA = 'solana'
   SUI = 'sui'
   COSMOS = 'cosmos'
+
+class TsdbAdapter(str, Enum):
+  TDENGINE = 'tdengine'
+  TAOS = 'tdengine'
+  TIMESCALE = 'timescale'
+  INFLUX = 'influx'
+  KDB = 'kdb'
 
 # below are based on ISO 8601 capitalization (cf. https://en.wikipedia.org/wiki/ISO_8601)
 Precision = Literal["ns", "us", "ms", "s", "m"]
@@ -37,66 +45,90 @@ FieldType = Literal[
 
 @dataclass
 class ResourceField:
-  id: str = ""
   name: str
   type: FieldType
   target: Optional[str] = None
   selector: Optional[str] = None
-  parameters: List[str|int|float] = [] # use field(default_factory=list) for mutable defaults
+  parameters: List[str|int|float] = field(default_factory=list)
   transformers: Optional[list[str]] = None
   value: Optional[any] = None
 
   @classmethod
-  def from_dict(cls, data: dict) -> 'ResourceField':
-    data['type'] = FieldType(data['type'])
-    f = cls(**data)
-    f.id = field_id(f) # hex digest
-    return f
+  def from_dict(cls, d: dict, default_target="") -> 'ResourceField':
+    d["target"] = d.get("target", default_target)
+    return cls(**d)
+
+  def signature(self) -> str:
+    return f"{self.name}-{self.type}-{self.target}-{self.selector}-{','.join(self.parameters)}-{','.join(self.transformers) if self.transformers else 'raw'}"
+
+  @property
+  def id(self) -> str:
+    return md5(self.signature().encode()).hexdigest()
+
+  def __hash__(self) -> int:
+    return hash(self.id)
 
 @dataclass
 class Resource:
   name: str
   resource_type: ResourceType
   data: List[ResourceField] # fields
+  data_by_field: dict[str, ResourceField] = field(default_factory=dict)
 
   @classmethod
-  def from_dict(cls, data: dict) -> 'Resource':
-    # instantiate fields first
-    fields = [ResourceField.from_dict(field) for field in data['data']]
-    return cls(
-      name=data['name'],
-      resource_type=ResourceType(data['resource_type']),
-      fields=fields)
+  def from_dict(cls, d: dict) -> 'Resource':
+    d["data"] = [ResourceField.from_dict(field) for field in d["data"]]
+    d["resource_type"] = ResourceType(d["resource_type"])
+    return cls(**d)
 
 @dataclass
-class CollectorConfig(Resource):
-  id: str = ""
-  collector_type: CollectorType
-  interval: Interval
-  inplace: bool  # whether the collector should update the resource in place or create a new one
+class Collector(Resource):
+  collector_type: CollectorType = "evm"
+  interval: Interval = "h1"
+  target: str = ""
+  collection_time: datetime = None
 
   @classmethod
-  def from_dict(cls, data: dict) -> 'CollectorConfig':
-    c = cls(
-      name=data['name'],
-      data=[ResourceField.from_dict(field) for field in data['data']],
-      resource_type=ResourceType(data['resource_type']),
-      collector_type=CollectorType(data['collector_type']),
-      interval=Interval(data['interval']),
-      inplace=data['inplace']
-    )
-    c.id = collector_id(c) # hex digest
-    return c
+  def from_dict(cls, d: dict) -> 'Collector':
+    d["data"] = [ResourceField.from_dict(field, d.get("target", "")) for field in d["data"]]
+    d["resource_type"] = ResourceType(d["resource_type"])
+    d["collector_type"] = CollectorType(d["collector_type"])
+    return cls(**d)
+
+  def signature(self) -> str:
+    return f"{self.name}-{self.resource_type}-{self.interval}-{self.collector_type}"\
+      + "-".join([field.id for field in self.data])
+
+  @property
+  def id(self) -> str:
+    return md5(self.signature().encode()).hexdigest()
+
+  def __hash__(self) -> int:
+    return hash(self.id)
+
+  def values(self):
+    return [field.value for field in self.data]
+
+  def values_dict(self):
+    return {field.name: field.value for field in self.data}
+
+  def load_values(self, values: list[any]):
+    for i, field in enumerate(self.data):
+      field.value = values[i]
+
+  def load_values_dict(self, values: dict[str, any]):
+    for field in self.data:
+      field.value = values[field.name]
 
 @dataclass
 class Config:
-  scrapper: List[CollectorConfig] = []
-  api: List[CollectorConfig] = []
-  evm: List[CollectorConfig] = []
-  solana: List[CollectorConfig] = []
-  cosmos: List[CollectorConfig] = []
-  sui: List[CollectorConfig] = []
-  ton: List[CollectorConfig] = []
+  scrapper: List[Collector] = field(default_factory=list)
+  api: List[Collector] = field(default_factory=list)
+  evm: List[Collector] = field(default_factory=list)
+  solana: List[Collector] = field(default_factory=list)
+  cosmos: List[Collector] = field(default_factory=list)
+  sui: List[Collector] = field(default_factory=list)
+  ton: List[Collector] = field(default_factory=list)
 
   @classmethod
   def from_dict(cls, data: dict) -> 'Config':
@@ -105,20 +137,21 @@ class Config:
       key = collector_type.value.lower() # match yaml config e.g., scrapper, api, evm
       items = data.get(key, [])
       # inject collector_type into each to instantiate the correct collector
-      config_dict[key] = [CollectorConfig.from_dict({**item, 'collector_type': collector_type.value}) for item in items]
+      config_dict[key] = [Collector.from_dict({**item, 'collector_type': collector_type.value}) for item in items]
     return cls(**config_dict)
 
 @dataclass
-class TsdbAdapter:
-  host: str
-  port: int
-  db: str
-  user: str
-  _pass: str
-  conn: any
-  cursor: any
+class Tsdb:
+  host: str = "localhost"
+  port: int = "6030"
+  db: str = "default"
+  user: str = "rw"
+  password: str = "pass"
+  conn: any = None
+  cursor: any = None
 
-  def connect(self, host: str, port: int, db: str, user: str, _pass: str):
+  @classmethod
+  def connect(cls, host: str, port: int, db: str, user: str, password: str):
     raise NotImplementedError
   def close(self):
     raise NotImplementedError
@@ -128,7 +161,9 @@ class TsdbAdapter:
     raise NotImplementedError
   def create_table(self, schema: Type, name_override=""):
     raise NotImplementedError
-  def insert(self, table: str, r: Resource, ):
+  def insert(self, c: Collector, table=""):
+    raise NotImplementedError
+  def insert_many(self, c: Collector, values: list[tuple], table=""):
     raise NotImplementedError
   def fetch(self, table: str, query: str):
     raise NotImplementedError

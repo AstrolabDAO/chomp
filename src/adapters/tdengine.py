@@ -1,9 +1,9 @@
 from typing import Type
+from os import environ as env
 from taos import TaosConnection, TaosCursor, TaosResult, TaosStmt, connect, new_bind_params, new_multi_binds
 from taos.tmq import Message, Consumer
-from utils import interval_to_sql
-from ..model import FieldType, Interval, Precision, Resource, TsdbAdapter
-from os import environ as env
+from src.utils import interval_to_sql, log_error, log_info, log_warn
+from src.model import Collector, FieldType, Interval, Precision, Resource, Tsdb
 
 TYPES: dict[FieldType, str] = {
   "int8": "tinyint", # 8 bits char
@@ -32,13 +32,33 @@ for k, v in TYPES.items():
 PRECISION: Precision = "ms" # ns, us, ms, s, m
 TIMEZONE="UTC" # making sure the front-end and back-end are in sync
 
-class TaosAdapter(TsdbAdapter):
+class Taos(Tsdb):
   conn: TaosConnection
   cursor: TaosCursor
 
-  def connect(self, host=env["TAOS_HOST"], port=env["TAOS_PORT"], db=env["TAOS_DB"], user=env["DB_RW_USER"], _pass=env["DB_RW_PASS"]):
-    self.conn = connect(host=host, port=port, database=db, user=user, password=_pass)
+  @classmethod
+  def connect(
+    cls,
+    host=env["TAOS_HOST"],
+    port=int(env["TAOS_PORT"]),
+    db=env["TAOS_DB"],
+    user=env["DB_RW_USER"],
+    password=env["DB_RW_PASS"]
+  ) -> "Taos":
+    self = cls(host, port, db, user, password)
+    try:
+      self.conn = connect(host=host, port=port, database=db, user=user, password=password)
+    except Exception as e:
+      if "Database not exist" in str(e):
+        self.conn = connect(host=host, port=port, user=user, password=password)
+        log_warn(f"Database '{db}' does not exist on {host}:{port}, creating it now...")
+        self.create_db(db)
+      else:
+        log_error(f"Failed to connect to TDengine on {host}:{port}/{db} as {user}", e)
+        raise e
+    log_info(f"Connected to TDengine on {host}:{port}/{db} as {user}")
     self.cursor = self.conn.cursor()
+    return self
 
   def close(self):
     if self.cursor:
@@ -46,16 +66,26 @@ class TaosAdapter(TsdbAdapter):
     if self.conn:
       self.conn.close()
 
+  def ensure_connected(self):
+    if not self.conn:
+      self.connect()
+    if not self.cursor:
+      self.cursor = self.conn.cursor()
+
   def get_dbs(self):
     # return self.conn.dbs
-    self.cursor.execute("SHOW DATABASES")
+    self.cursor.execute("SHOW DATABASES;")
     return self.cursor.fetchall()
 
   def create_db(self, name: str, force=False):
-    if not self.conn:
-      self.connect()
+    self.ensure_connected()
     base = "CREATE DATABASE IF NOT EXISTS" if force else "CREATE DATABASE"
-    self.cursor.execute(f"{base} {name} PRECISION {PRECISION} BUFFER 256 KEEP 3650")
+    try:
+      self.cursor.execute(f"{base} {name} PRECISION '{PRECISION}' BUFFER 256 KEEP 3650d;") # 10 years max archiving
+    except Exception as e:
+      log_error(f"Failed to create database {name} with time precision {PRECISION}", e)
+      raise e
+    log_info(f"Created database {name} with time precision {PRECISION}")
 
   def use_db(self, db: str):
     if not self.conn:
@@ -63,30 +93,39 @@ class TaosAdapter(TsdbAdapter):
     else:
       self.conn.select_db(db)
 
-  def create_table(self, schema: Resource, name="", force=False):
-    if not self.conn:
-      self.connect()
-    table = name or schema.name
-    base = "CREATE TABLE IF NOT EXISTS" if force else "CREATE TABLE;"
-    fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in schema.data])
-    self.cursor.execute(f"{base} {table} ({fields})")
+  def create_table(self, c: Collector, name="", force=False):
+    self.ensure_connected()
+    table = name or c.name
+    base = "CREATE TABLE IF NOT EXISTS" if force else "CREATE TABLE"
+    fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in c.data])
+    sql = f"{base} {self.db}.{table} (ts timestamp, {fields});"
+    self.cursor.execute(sql)
 
-  def insert(self, data: Resource, table=""):
-    table = table or data.name
-    fields = ", ".join([field.name for field in data.data])
-    values = ", ".join([f"'{field.value}'" for field in data.data])
-    self.cursor.execute(f"INSERT INTO {table} ({fields}) VALUES ({values});")
+  def insert(self, c: Collector, table=""):
+    table = table or c.name
+    fields = ", ".join([field.name for field in c.data])
+    values = ", ".join([f"{field.value}" for field in c.data])
+    sql = f"INSERT INTO {self.db}.{table} (ts, {fields}) VALUES ('{c.collection_time}', {values});"
+    try:
+      self.cursor.execute(sql)
+    except Exception as e:
+      if "Table does not exist" in str(e):
+        self.create_table(c, name=table)
+        self.cursor.execute(sql)
+      else:
+        log_error(f"Failed to insert data into {self.db}.{table}", e)
+        raise e
 
-  def insert_many(self, els: list[Resource], table=""):
-    if not self.conn:
-      self.connect()
-    table = table or els[0].name
-    fields = ", ".join([field.name for field in els[0].data])
+  def insert_many(self, c: Collector, values: list[tuple], table=""):
+    self.ensure_connected()
+    table = table or c.name
+    fields = ", ".join([field.name for field in c.data])
     field_count = len(fields)
-    stmt = self.conn.statement("insert into log values(?" + ",?" * (field_count - 1) + ")")
+    stmt = self.conn.statement(f"INSER INTO {self.db}.{table} VALUES(?" + ",?" * (field_count - 1) + ")")
     params = new_multi_binds(field_count)
+    types = [PREPARE_STMT[field.type] for field in c.data]
     for i in fields:
-      params[i][PREPARE_STMT[els[0].data[i]._type]]([field.data[i].value for field in els])
+      params[i][types[i]]([v[i] for v in values])
     stmt.bind(params)
     stmt.execute()
 
@@ -94,12 +133,14 @@ class TaosAdapter(TsdbAdapter):
     self.cursor.execute(query)
     return self.cursor.fetchall()
 
-  def fetch_series(self, table: str, from_date: int, to_date: int, interval: Interval, fields=[]) -> list:
+  def fetch_series(self, c: Collector, from_date: int, to_date: int, aggregation_interval=None, fields=[]) -> list:
     if not fields or len(fields) == 0:
       fields = ["*"]
+    if not aggregation_interval:
+      aggregation_interval = c.interval
+    sql_tf = interval_to_sql(aggregation_interval)
     # query = f"SELECT {', '.join(fields)} FROM {table} WHERE ts >= {from_date} AND ts <= {to_date} GROUP BY ts DIV {interval} ORDER BY ts"
-    sql_tf = interval_to_sql(interval)
-    query = f"SELECT {', '.join(fields)} FROM {table} WHERE ts >= {from_date} AND ts <= {to_date} INTERVAL({sql_tf}) SLIDING({sql_tf});"
+    query = f"SELECT {', '.join(fields)} FROM {self.db}.{c.name} WHERE ts >= {from_date} AND ts <= {to_date} INTERVAL({sql_tf}) SLIDING({sql_tf});"
     self.cursor.execute(query)
     return self.cursor.fetchall()
 
