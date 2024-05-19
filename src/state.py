@@ -14,7 +14,7 @@ env = env
 config: Config = {}
 redis: Redis = {}
 tsdb: Tsdb = {}
-verbose: bool = False
+verbose: bool = True
 cron_by_id: dict[str, Cron] = {}
 
 def get_loop():

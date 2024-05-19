@@ -30,7 +30,7 @@ async def main():
   state.tsdb = await tsdb_class.connect()
   # load collector configurations
   config = state.get_config()
-  collectors = config.scrapper + config.http_api + config.ws_api # + config.fix_api + config.evm
+  collectors = config.scrapper + config.http_api + config.ws_api + # config.fix_api + config.evm
   # running collectors/workers integrity check
   await state.check_collectors_integrity(collectors)
   # identify tasks left unclaimed by workers
