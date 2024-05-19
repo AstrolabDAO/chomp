@@ -68,6 +68,7 @@ maxTsmaNum              5
 dataDir                 /data/taos
 logDir                  /data/taos/log
 tempDir                 /tmp
+debugFlag               131
 logKeepDays             30
 telemetryReporting      0
 crashReporting          0

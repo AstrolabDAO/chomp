@@ -8,12 +8,13 @@ authors = [
 dependencies = [
     "redis>=5.0.4",
     "taospy>=2.7.13",
-    "arq>=0.25.0",
     "eth-ape>=0.7.19",
     "python-dotenv>=1.0.1",
     "bs4>=0.0.2",
     "pyyaml>=6.0.1",
     "multicall>=0.9.0",
+    "aiocron>=1.8",
+    "lxml>=5.2.2",
 ]
 requires-python = ">=3.11"
 readme = "README.md"

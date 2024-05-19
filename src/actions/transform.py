@@ -2,11 +2,12 @@ import re
 import string
 import json
 from hashlib import sha256, md5
-from actions.load import load_series
 import numpy as np
 
 import src.state as state
 from src.model import Collector, Resource, ResourceField, Tsdb
+from src.actions.load import load_series
+from src.safe_eval import safe_eval
 from src.utils import interval_to_delta, log_debug
 
 BASE_TRANSFORMERS: dict[str, callable] = {
@@ -92,10 +93,10 @@ def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> a
         series = load_series(c, from_date, interval=c.interval, field=target_field)
         # step 8: apply the series transformer
         res = SERIES_TRANSFORMERS.get(fn)(c, series)
-        # step 9: replace the transformer with the result
+        # step 9: inject the result in the transformer for recursive evaluation
         transformer = transformer.replace(group, res)
   # eval the transformer after injecting all computed values
-  return eval(transformer.format(self=field.value, **c.data_by_field))
+  return safe_eval(transformer.format(self=field.value, **c.data_by_field)) # TODO: precompile
 
 def transform(c: Collector, f: ResourceField) -> any:
   if not f.transformers or len(f.transformers) == 0:

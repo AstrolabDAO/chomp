@@ -3,12 +3,13 @@ import os
 from utils import log_debug
 from web3 import Web3
 from multicall import Call, Multicall
+
 from src.model import Collector, ResourceField, Tsdb
 
 def result(value):
   return value
 
-def collect(ctx, c: Collector) -> bool:
+def collect(c: Collector) -> bool:
   # Prepare multi calls
   call_list = {}
 

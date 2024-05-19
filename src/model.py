@@ -1,34 +1,26 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import md5
+from aiocron import Cron
 from typing import Literal, Optional, List, Type
-from enum import Enum
 
-import numpy as np
+from utils import interval_to_seconds
 
-class ResourceType(str, Enum):
-  VALUE = 'value'  # e.g., inplace document (json/text), binary, int, float, date, string...
-  SERIES = 'series'  # increment indexed values
-  TIMESERIES = 'timeseries'  # time indexed values
+ResourceType = Literal[
+  "value", # e.g., inplace document (json/text), binary, int, float, date, string...
+  "series", # increment indexed values
+  "timeseries" # time indexed values
+]
 
-class CollectorType(str, Enum):
-  SCRAPPER = 'scrapper'
-  API = 'api'
-  EVM = 'evm'
-  TON = 'ton'
-  SOLANA = 'solana'
-  SUI = 'sui'
-  COSMOS = 'cosmos'
+CollectorType = Literal[
+  "scrapper", "http_api", "ws_api", "fix_api", # web2
+  "evm", "cosmos", "solana", "sui", "ton" # web3
+]
 
-class TsdbAdapter(str, Enum):
-  TDENGINE = 'tdengine'
-  TAOS = 'tdengine'
-  TIMESCALE = 'timescale'
-  INFLUX = 'influx'
-  KDB = 'kdb'
+TsdbAdapter = Literal["tdengine", "timescale", "influx", "kdb"]
 
 # below are based on ISO 8601 capitalization (cf. https://en.wikipedia.org/wiki/ISO_8601)
-Precision = Literal["ns", "us", "ms", "s", "m"]
+TimeUnit = Literal["ns", "us", "ms", "s", "m", "h", "D", "W", "M", "Y"]
 Interval = Literal[
   "m1", "m2", "m5", "m10", "m15", "m30", # sub hour
   "h1", "h2", "h4", "h6", "h8", "h12", # sub day
@@ -50,12 +42,13 @@ class ResourceField:
   target: Optional[str] = None
   selector: Optional[str] = None
   parameters: List[str|int|float] = field(default_factory=list)
+  handler: Optional[str] = None # for streams only (json ws, fix...)
+  reducer: Optional[str] = None # for streams only (json ws, fix...)
   transformers: Optional[list[str]] = None
   value: Optional[any] = None
 
   @classmethod
-  def from_dict(cls, d: dict, default_target="") -> 'ResourceField':
-    d["target"] = d.get("target", default_target)
+  def from_dict(cls, d: dict) -> 'ResourceField':
     return cls(**d)
 
   def signature(self) -> str:
@@ -72,28 +65,29 @@ class ResourceField:
 class Resource:
   name: str
   resource_type: ResourceType
-  data: List[ResourceField] # fields
+  target: str = ""
+  selector: str = ""
+  handler: str = ""
+  reducer: str = ""
+  data: List[ResourceField] = field(default_factory=list)
   data_by_field: dict[str, ResourceField] = field(default_factory=dict)
 
   @classmethod
   def from_dict(cls, d: dict) -> 'Resource':
     d["data"] = [ResourceField.from_dict(field) for field in d["data"]]
-    d["resource_type"] = ResourceType(d["resource_type"])
-    return cls(**d)
+    r = cls(**d)
+    for field in r.data:
+      if not field.target: field.target = r.target
+      if not field.selector: field.selector = r.selector
+      if not field.handler: field.handler = r.handler
+    return r
 
 @dataclass
 class Collector(Resource):
   collector_type: CollectorType = "evm"
   interval: Interval = "h1"
-  target: str = ""
   collection_time: datetime = None
-
-  @classmethod
-  def from_dict(cls, d: dict) -> 'Collector':
-    d["data"] = [ResourceField.from_dict(field, d.get("target", "")) for field in d["data"]]
-    d["resource_type"] = ResourceType(d["resource_type"])
-    d["collector_type"] = CollectorType(d["collector_type"])
-    return cls(**d)
+  cron: Optional[Cron] = None
 
   def signature(self) -> str:
     return f"{self.name}-{self.resource_type}-{self.interval}-{self.collector_type}"\
@@ -102,6 +96,10 @@ class Collector(Resource):
   @property
   def id(self) -> str:
     return md5(self.signature().encode()).hexdigest()
+
+  @property
+  def interval_sec(self) -> int:
+    return interval_to_seconds(self.interval)
 
   def __hash__(self) -> int:
     return hash(self.id)
@@ -123,7 +121,9 @@ class Collector(Resource):
 @dataclass
 class Config:
   scrapper: List[Collector] = field(default_factory=list)
-  api: List[Collector] = field(default_factory=list)
+  http_api: List[Collector] = field(default_factory=list)
+  ws_api: List[Collector] = field(default_factory=list)
+  fix_api: List[Collector] = field(default_factory=list)
   evm: List[Collector] = field(default_factory=list)
   solana: List[Collector] = field(default_factory=list)
   cosmos: List[Collector] = field(default_factory=list)
@@ -133,11 +133,11 @@ class Config:
   @classmethod
   def from_dict(cls, data: dict) -> 'Config':
     config_dict = {}
-    for collector_type in CollectorType:
-      key = collector_type.value.lower() # match yaml config e.g., scrapper, api, evm
+    for collector_type in CollectorType.__args__:
+      key = collector_type.lower() # match yaml config e.g., scrapper, api, evm
       items = data.get(key, [])
       # inject collector_type into each to instantiate the correct collector
-      config_dict[key] = [Collector.from_dict({**item, 'collector_type': collector_type.value}) for item in items]
+      config_dict[key] = [Collector.from_dict({**item, 'collector_type': collector_type}) for item in items]
     return cls(**config_dict)
 
 @dataclass
@@ -151,23 +151,23 @@ class Tsdb:
   cursor: any = None
 
   @classmethod
-  def connect(cls, host: str, port: int, db: str, user: str, password: str):
+  async def connect(cls, host: str, port: int, db: str, user: str, password: str):
     raise NotImplementedError
-  def close(self):
+  async def close(self):
     raise NotImplementedError
-  def create_db(self, name: str, options: dict):
+  async def create_db(self, name: str, options: dict):
     raise NotImplementedError
-  def use_db(self, db: str):
+  async def use_db(self, db: str):
     raise NotImplementedError
-  def create_table(self, schema: Type, name_override=""):
+  async def create_table(self, schema: Type, name_override=""):
     raise NotImplementedError
-  def insert(self, c: Collector, table=""):
+  async def insert(self, c: Collector, table=""):
     raise NotImplementedError
-  def insert_many(self, c: Collector, values: list[tuple], table=""):
+  async def insert_many(self, c: Collector, values: list[tuple], table=""):
     raise NotImplementedError
-  def fetch(self, table: str, query: str):
+  async def fetch(self, table: str, query: str):
     raise NotImplementedError
-  def fetchall(self):
+  async def fetchall(self):
     raise NotImplementedError
-  def commit(self):
+  async def commit(self):
     raise NotImplementedError

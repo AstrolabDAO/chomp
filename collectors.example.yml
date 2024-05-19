@@ -24,7 +24,7 @@ scrapper:
         selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[12]/td[2]
 
 # rest api collectors
-api:
+http_api:
   - name: CoingeckoPriceFeeds
     interval: m1
     resource_type: timeseries
@@ -49,6 +49,63 @@ api:
         type: float64
         selector: .pepe.usd
         transformers: ["{self} * {USDCUSD}", "round10"]
+
+ws_api:
+  - name: BinancePriceFeeds
+    interval: s30
+    resource_type: timeseries
+    selector: root
+    handler: |
+      def h(msg, epochs):
+        cols = ["bids", "asks", "vbids", "vasks"] if msg['m'] else ["asks", "bids", "vasks", "vbids"]  # agg trade buy/sell side ordering
+        hp = [epochs[0].setdefault(cols[0], []), epochs[0].setdefault(cols[1], [])]  # agg trades price history
+        hv = [epochs[0].setdefault(cols[2], []), epochs[0].setdefault(cols[3], [])]  # agg trades volume history
+        p = [float(msg['p']), 0] # prices
+        if len(hp[1]) > 1:
+          p[1] = hp[1][-1]
+        elif len(epochs) > 1:
+          p[1] = epochs[1][cols[1]][-1]
+        else:
+          p[1] = p[0] # bid == ask if no previous trade available
+        v = [float(msg['q']), 0] # volumes
+        hp[0].append(p[0])
+        hp[1].append(p[1])
+        hv[0].append(v[0])
+        hv[1].append(v[1])
+
+    data:
+      - name: USDCUSDT
+        type: float64
+        target: wss://stream.binance.com:9443/ws/usdcusdt@trade
+        reducer: "lambda epochs: (mean(epochs[0]['bids']) + mean(epochs[0]['asks'])) / 2"
+        transformers: ["round6"]
+      - name: USDCUSDT.spread
+        type: float64
+        target: wss://stream.binance.com:9443/ws/usdcusdt@trade
+        reducer: "lambda epochs: mean(epochs[0]['asks']) - mean(epochs[0]['bids'])"
+        transformers: ["round6"]
+      - name: BTCUSDC
+        type: float64
+        target: wss://stream.binance.com:9443/ws/btcusdt@trade
+        reducer: "lambda epochs: (mean(epochs[0]['bids']) + mean(epochs[0]['asks'])) / 2"
+        transformers: ["{self} * {USDCUSDT}", "round2"]
+      - name: BTCUSDC.spread
+        type: float64
+        target: wss://stream.binance.com:9443/ws/btcusdt@trade
+        reducer: "lambda epochs: mean(epochs[0]['asks']) - mean(epochs[0]['bids'])"
+        transformers: ["{self} * {USDCUSDT}", "round2"]
+      - name: ETHUSDC
+        type: float64
+        target: wss://stream.binance.com:9443/ws/ethusdt@trade
+        reducer: "lambda epochs: (mean(epochs[0]['bids']) + mean(epochs[0]['asks'])) / 2"
+        transformers: ["{self} * {USDCUSDT}", "round2"]
+      - name: ETHUSDC.spread
+        type: float64
+        target: wss://stream.binance.com:9443/ws/ethusdt@trade
+        reducer: "lambda epochs: mean(epochs[0]['asks']) - mean(epochs[0]['bids'])"
+        transformers: ["{self} * {USDCUSDT}", "round2"]
+
+fix_api: []
 
 # evm collectors
 evm:
