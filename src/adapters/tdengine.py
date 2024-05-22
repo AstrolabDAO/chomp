@@ -97,6 +97,7 @@ class Taos(Tsdb):
   async def create_table(self, c: Collector, name="", force=False):
     await self.ensure_connected()
     table = name or c.name
+    log_info(f"Creating table {self.db}.{table}...")
     base = "CREATE TABLE IF NOT EXISTS" if force else "CREATE TABLE"
     fields = ", ".join([f"`{field.name}` {TYPES[field.type]}" for field in c.data])
     sql = f"{base} {self.db}.{table} (ts timestamp, {fields});"
@@ -111,6 +112,7 @@ class Taos(Tsdb):
       self.cursor.execute(sql)
     except Exception as e:
       if "Table does not exist" in str(e):
+        log_warn(f"Table {self.db}.{table} does not exist, creating it now...")
         await self.create_table(c, name=table)
         self.cursor.execute(sql)
       else:

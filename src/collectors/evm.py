@@ -1,44 +1,61 @@
-from hashlib import md5
-import os
-from utils import log_debug
-from web3 import Web3
+from asyncio import Task
 from multicall import Call, Multicall
+from src.model import Collector, ResourceField
+from src.utils import floor_utc, interval_to_seconds, log_debug, log_error, log_warn
+from src.actions.store import store
+from src.actions.transform import transform
+from src.cache import ensure_claim_task, get_or_set_cache
+import src.state as state
 
-from src.model import Collector, ResourceField, Tsdb
+def parse_generic(data: any) -> any:
+  return data
 
-def result(value):
-  return value
+async def schedule(c: Collector) -> list[Task]:
 
-def collect(c: Collector) -> bool:
-  # Prepare multi calls
-  call_list = {}
+  async def collect(c: Collector):
+    ensure_claim_task(c)
+    unique_calls = set()
+    calls_by_chain = {}
+    field_by_name = {f.name: f for f in c.data}
 
-  for _, evm_call in enumerate(c.data):
-    chain_id, target_addr = evm_call.target.split(":")
+    for field in c.data:
+      if not field.target:
+        log_error(f"Missing target smart contract view for field {c.name}.{field.name}, skipping...")
+        continue
+      if field.id in unique_calls:
+        log_warn(f"Duplicate target smart contract view {field.target} in {c.name}.{field.name}, skipping...")
+        continue
+      unique_calls.add(field.id)
 
-    # Checksum to be sure
-    target_addr = Web3.to_checksum_address(target_addr)
+      chain_id, addr = field.chain_addr()
+      if chain_id not in calls_by_chain:
+        client = state.get_web3_client(chain_id)
+        calls_by_chain[chain_id] = Multicall(calls=[], _w3=client)
 
-    # Check if chain_id already exists in call_list
-    if chain_id not in call_list.keys():
-      # Initialize a new client for chain_id & setup multicall object
-      rpc = os.getenv(f"{chain_id}_RPC")
-      w3_client = Web3(Web3.HTTPProvider(rpc))
+      call = Call(target=addr, function=[field.selector, *field.params], returns=[[field.name, parse_generic]])
+      calls_by_chain[chain_id].calls.append(call)
 
-      assert w3_client.is_connected(), f"Could not connect to RPC at {rpc}"
+    for chain_id, multicall in calls_by_chain.items():
+      try:
+        ft = state.get_thread_pool().submit(multicall)
+        output = ft.result()
+        for name, value in output.items():
+          field = field_by_name.get(name)
+          field.value = value # can be a tuple
+          c.data_by_field[field.name] = field.value
+          if state.verbose:
+            log_debug(f"Collected {c.name}.{field.name} -> {field.value}")
+      except Exception as e:
+        log_error(f"Failed to execute multicall for chain {chain_id}: {e}")
 
-      call_list[chain_id] = Multicall(calls=[], _w3=w3_client)
+    # run transformers field by field sequentially as described after chain by chain multicall execution
+    for field in c.data:
+      if field.value and field.transformers:
+        field.value = transform(c, field)
 
-    # Generate query hash - nice to have
-    query_hash = md5(f"{chain_id}:{target_addr}:{evm_call.selector}:{evm_call.parameters}".encode()).hexdigest()
+    c.collection_time = floor_utc(c.interval)
+    await store(c)
 
-    # Add call to multicall
-    fn_call = Call(target=target_addr, function=[evm_call.selector, *evm_call.parameters], returns=[(f'{query_hash}', result)])
-    call_list[chain_id].calls.append(fn_call)
+  # globally register/schedule the collector
+  return [state.add_cron(c.id, fn=collect, args=(c,), interval=c.interval)]
 
-  # Execute multicalls
-  for chain_id in call_list.keys():
-    output = call_list[chain_id]()
-    log_debug(f"[CHAIN {chain_id}: => {output}")
-
-  return True

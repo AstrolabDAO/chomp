@@ -14,9 +14,9 @@ def claim_key(c: Collector) -> str:
 
 def claim_task(c: Collector, until=0, key="") -> bool:
   if state.verbose:
-    log_debug(f"Claiming task {c.name}-{c.interval}")
+    log_debug(f"Claiming task {c.name}.{c.interval}")
   # if c.collection_time and c.collection_time > (datetime.now(UTC) - interval_to_delta(c.interval)):
-  #   log_warn(f"Collection time inconsistent for {c.name}-{c.interval}, last collection was {c.collection_time}, probably due to a slow running collection or local worker race... investigate!")
+  #   log_warn(f"Collection time inconsistent for {c.name}.{c.interval}, last collection was {c.collection_time}, probably due to a slow running collection or local worker race... investigate!")
   key = key or claim_key(c)
   if is_task_claimed(c, True, key):
     return False
@@ -24,7 +24,7 @@ def claim_task(c: Collector, until=0, key="") -> bool:
 
 def ensure_claim_task(c: Collector, until=0) -> bool:
   if not claim_task(c, until):
-    raise ValueError(f"Failed to claim task {c.name}-{c.interval})")
+    raise ValueError(f"Failed to claim task {c.name}.{c.interval})")
 
 def is_task_claimed(c: Collector, exclude_self=False, key="") -> bool:
   key = key or claim_key(c)

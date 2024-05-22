@@ -22,7 +22,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
 
   async def collect(c: Collector):
     if state.verbose:
-      log_debug(f"Collecting {c.name}-{c.interval}")
+      log_debug(f"Collecting {c.name}.{c.interval}")
     ensure_claim_task(c)
     expiry_sec = interval_to_seconds(c.interval)
     for field in c.data:

@@ -4,7 +4,7 @@ from typing import Type
 from dotenv import find_dotenv, load_dotenv
 from importlib import reload
 
-from src.utils import log_debug, log_error, log_info
+from src.utils import log_debug, log_error, log_info, log_warn
 from src.model import Tsdb, TsdbAdapter
 import src.state as state
 from src.cache import is_task_claimed
@@ -30,7 +30,7 @@ async def main():
   state.tsdb = await tsdb_class.connect()
   # load collector configurations
   config = state.get_config()
-  collectors = config.scrapper + config.http_api + config.ws_api + # config.fix_api + config.evm
+  collectors = config.scrapper + config.http_api + config.ws_api + config.evm # + config.fix_api
   # running collectors/workers integrity check
   await state.check_collectors_integrity(collectors)
   # identify tasks left unclaimed by workers
@@ -45,15 +45,15 @@ async def main():
    | | | | | |  __/ | |__|  O  | | |  __| (__| |_' O  | |
    |_| |_| |_|\___|  \____\___/|_|_|\___,\___|__,\___/|_|
 
-  Collector Name\t| Type\t\t| Interval\t| Fields\t| Status\t| Worker Availability
+  Collector Name                | Type        | Interval | Fields    | Status           | Pickup Status
   -----------------------------------------------------------------------------------------------------------\n"""
   claims = 0
   for c in collectors:
     if c in in_range:
       claims += 1
-    start_msg += f"  {c.name}\t| {c.collector_type}\t| {c.interval}\t\t| {len(c.data)} fields\t"\
+    start_msg += f"  {c.name.ljust(30, ' ')}| {c.collector_type.ljust(12, ' ')}| {c.interval.ljust(9, ' ')}| {str(len(c.data)).rjust(2, '>')} fields "\
       + f"| {'unclaimed 🟢' if c in unclaimed else 'claimed 🔴'}\t"\
-      + f"| {'in range 🟢' if c in in_range else 'out of range 🔴'} ({claims}/{state.max_tasks})\n"
+      + f"| {'picked up 🟢' if c in in_range else 'not picked up 🔴'} ({claims}/{state.max_tasks})\n"
   log_info(start_msg)
   # schedule all tasks
   tasks = []
@@ -61,6 +61,9 @@ async def main():
     tasks += await schedule(c)
   log_info(f"Starting {len(tasks)} tasks ({len(in_range)} collector crons, {len(tasks) - len(in_range)} extraneous tasks)")
   # run all tasks concurrently until interrupted (restarting is currently handled at the supervisor/container level)
+  if not tasks:
+    log_warn(f"No tasks scheduled, {len(tasks)} picked up by other workers. Shutting down...")
+    return
   try:
     await asyncio.gather(*tasks)
   except KeyboardInterrupt:

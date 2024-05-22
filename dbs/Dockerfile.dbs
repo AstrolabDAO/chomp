@@ -49,6 +49,7 @@ RUN mkdir -p /data/taos/log /data/redis/log
 COPY --from=tdengine-base /deps/* /usr/lib/
 COPY --from=tdengine-base /usr/bin/taosd /usr/bin/taosd
 COPY --from=tdengine-base /usr/bin/taos /usr/bin/taos
+COPY --from=tdengine-base /usr/bin/taosadapter /usr/bin/taosadapter
 
 # Configure TDengine
 COPY <<EOF /tmp/init_taos.sql
@@ -80,6 +81,64 @@ countAlwaysReturnValue  1
 maxNumOfDistinctRes     $DB_MAX_ROWS_PER_QUERY
 maxInsertBatchRows      $DB_MAX_ROWS_PER_QUERY
 ttlChangeOnWrite        1
+EOF
+
+COPY <<EOF /etc/taos/taosadapter.toml
+debug = false
+taosConfigDir = "/etc/taos/"
+port = 40003
+logLevel = "info"
+httpCodeServerError = false
+SMLAutoCreateDB = false
+
+[cors]
+allowAllOrigins = true
+
+#[pool]
+#maxConnect = 0
+#maxIdle = 0
+#idleTimeout = 0
+
+# [log]
+#path = "/var/log/taos"
+# rotationCount = 30
+# rotationTime = "24h"
+# rotationSize = "1GB"
+# enableRecordHttpSql = false
+# sqlRotationCount = 2
+# sqlRotationTime = "24h"
+# sqlRotationSize = "1GB"
+
+[opentsdb]
+enable = true
+
+[influxdb]
+enable = true
+
+[opentsdb_telnet]
+enable = false
+
+[prometheus]
+enable = false
+
+[statsd]
+enable = false
+
+[collectd]
+enable = false
+
+[node_exporter]
+enable = false
+
+[tmq]
+releaseIntervalMultiplierForAutocommit = 2
+
+[monitor]
+disable = true
+
+[uploadKeeper]
+enable = false
+
 EOF
 
 # Copy Redis binaries from base image
@@ -138,6 +197,7 @@ taosd -c /etc/taos >/dev/null 2>&1 &
 sleep 5
 taos -h $TAOS_HOST -P $TAOS_PORT -s "source /tmp/init_taos.sql;"
 rm /tmp/init_taos.sql
+taosadapter -c /etc/taos/taosadapter.toml &
 tail -f /data/taos/log/taosd*log*
 EOF
 RUN chmod +x /usr/local/bin/start-dbs.sh

@@ -20,33 +20,58 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
   # sub function (one per route)
   async def subscribe(c: Collector, url: str, route_hash: str):
     if state.verbose:
-      log_debug(f"Subscribing to {url} for {c.name}-{c.interval}...")
-    async with websockets.connect(url) as ws:
-      # initialize route state for reducers and transformers to use
-      epochs_by_route.setdefault(url, deque([{}]))
-      while True:
-        if ws.closed:
-          log_error(f"{url} ws connection closed for {c.name}")
-          break
-        res = await ws.recv() # poll for data
-        res = json.loads(res)
-        handled = {}
-        for field in batched_fields_by_route[route_hash]:
-          if field.handler and not handled.get(field.handler, {}).get(field.selector, False):
-            data = select_from_dict(field.selector, res)
-            try:
-              field.handler(data, epochs_by_route[url]) # map data with handler
-            except Exception as e:
-              log_error(f"Failed to handle websocket data from {url} for {c.name}: {e}")
-            handled.setdefault(field.handler, {})[field.selector] = True
+      log_debug(f"Subscribing to {url} for {c.name}.{c.interval}...")
 
-        # if state.verbose: # <-- way too verbose
-        #   log_debug(f"Handled websocket data {data} from {url} for {c.name}, route state:\n{epochs_by_route[url][0]}")
+    retry_count = 0
+
+    while retry_count <= state.max_retries:
+      try:
+        async with websockets.connect(url) as ws:
+          # initialize route state for reducers and transformers to use
+          epochs_by_route.setdefault(url, deque([{}]))
+          while True:
+            if ws.closed:
+              log_error(f"{url} ws connection closed for {c.name}")
+              break
+            res = await ws.recv() # poll for data
+            res = json.loads(res)
+            handled = {}
+            for field in batched_fields_by_route[route_hash]:
+              if field.handler and not handled.get(field.handler, {}).get(field.selector, False):
+                data = select_from_dict(field.selector, res)
+                try:
+                  field.handler(data, epochs_by_route[url]) # map data with handler
+                except Exception as e:
+                  log_error(f"Failed to handle websocket data from {url} for {c.name}: {e}")
+                handled.setdefault(field.handler, {})[field.selector] = True
+
+            # if state.verbose: # <-- way too verbose
+            #   log_debug(f"Handled websocket data {data} from {url} for {c.name}, route state:\n{epochs_by_route[url][0]}")
+
+        # If we exit the loop without an exception, reset retry count
+        retry_count = 0
+
+      except (websockets.exceptions.ConnectionClosedError, ConnectionResetError) as e:
+        retry_count += 1
+        log_error(f"Connection error ({e}) occurred. Attempting to reconnect to {url} for {c.name} (retry {retry_count}/{state.max_retries})...")
+        if retry_count > state.max_retries:
+          log_error(f"Exceeded max retries ({state.max_retries}). Giving up on {url} for {c.name}.")
+          break
+        sleep_time = state.retry_cooldown * retry_count
+        await asyncio.sleep(sleep_time)
+      except Exception as e:
+        log_error(f"Unexpected error occurred: {e}")
+        retry_count += 1
+        if retry_count > state.max_retries:
+          log_error(f"Exceeded max retries ({state.max_retries}). Giving up on {url} for {c.name}.")
+          break
+        sleep_time = state.retry_cooldown * retry_count
+        await asyncio.sleep(sleep_time)
 
   # collect function (one per collector)
   async def collect(c: Collector):
     if state.verbose:
-      log_debug(f"Collecting {c.name}-{c.interval}")
+      log_debug(f"Collecting {c.name}.{c.interval}")
     ensure_claim_task(c)
     # batch of reducers/transformers by route
     # iterate over key/value pairs

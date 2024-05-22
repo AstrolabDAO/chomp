@@ -15,7 +15,7 @@ fi
 
 # Run the new container instance
 echo "Starting $DB_TEST_CONTAINER container..."
-docker run -d --env-file .env.test --name $DB_TEST_CONTAINER -p $REDIS_PORT:$REDIS_PORT -p $TAOS_PORT:$TAOS_PORT $DB_IMAGE
+docker run -d --env-file .env.test --network botnet --name $DB_TEST_CONTAINER -p $REDIS_PORT:$REDIS_PORT -p $TAOS_PORT:$TAOS_PORT -p $TAOS_HTTP_PORT:$TAOS_HTTP_PORT $DB_IMAGE
 
 # Wait 5s for the dbs to start
 sleep 5

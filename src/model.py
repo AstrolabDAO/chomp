@@ -2,9 +2,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from hashlib import md5
 from aiocron import Cron
-from typing import Literal, Optional, List, Type
+from typing import Literal, Optional, Type
 
 from utils import interval_to_seconds
+from web3 import Web3
 
 ResourceType = Literal[
   "value", # e.g., inplace document (json/text), binary, int, float, date, string...
@@ -36,15 +37,18 @@ FieldType = Literal[
   "bool", "timestamp", "string", "binary", "varbinary"]
 
 @dataclass
-class ResourceField:
+class Targettable:
   name: str
-  type: FieldType
-  target: Optional[str] = None
-  selector: Optional[str] = None
-  parameters: List[str|int|float] = field(default_factory=list)
-  handler: Optional[str] = None # for streams only (json ws, fix...)
-  reducer: Optional[str] = None # for streams only (json ws, fix...)
-  transformers: Optional[list[str]] = None
+  target: str = ""
+  selector: str = ""
+  params: list[str|int|float] = field(default_factory=list)
+  handler: str = "" # for streams only (json ws, fix...)
+  reducer: str = "" # for streams only (json ws, fix...)
+  transformers: list[str] = field(default_factory=list)
+
+@dataclass
+class ResourceField(Targettable):
+  type: FieldType = "float64"
   value: Optional[any] = None
 
   @classmethod
@@ -52,11 +56,20 @@ class ResourceField:
     return cls(**d)
 
   def signature(self) -> str:
-    return f"{self.name}-{self.type}-{self.target}-{self.selector}-{','.join(self.parameters)}-{','.join(self.transformers) if self.transformers else 'raw'}"
+    return f"{self.name}-{self.type}-{self.target}-{self.selector}-[{','.join(self.params)}]-[{','.join(self.transformers) if self.transformers else 'raw'}]"
 
   @property
   def id(self) -> str:
     return md5(self.signature().encode()).hexdigest()
+
+  def chain_addr(self) -> tuple[str|int, str]:
+    tokens = self.target.split(":")
+    n = len(tokens)
+    if n == 1:
+      tokens = ["1", tokens[0]] # default to ethereum L1
+    if n > 2:
+      raise ValueError(f"Invalid target format for evm: {self.target}, expected chain_id:address")
+    return [int(tokens[0]), Web3.to_checksum_address(tokens[1])]
 
   def __hash__(self) -> int:
     return hash(self.id)
@@ -64,16 +77,19 @@ class ResourceField:
 @dataclass
 class Resource:
   name: str
-  resource_type: ResourceType
-  target: str = ""
-  selector: str = ""
-  handler: str = ""
-  reducer: str = ""
-  data: List[ResourceField] = field(default_factory=list)
+  resource_type: ResourceType = "timeseries"
+  data: list[ResourceField] = field(default_factory=list)
   data_by_field: dict[str, ResourceField] = field(default_factory=dict)
 
+@dataclass
+class Collector(Resource, Targettable):
+  interval: Interval = "h1"
+  collector_type: CollectorType = "evm"
+  collection_time: datetime = None
+  cron: Optional[Cron] = None
+
   @classmethod
-  def from_dict(cls, d: dict) -> 'Resource':
+  def from_dict(cls, d: dict) -> 'Collector':
     d["data"] = [ResourceField.from_dict(field) for field in d["data"]]
     r = cls(**d)
     for field in r.data:
@@ -81,13 +97,6 @@ class Resource:
       if not field.selector: field.selector = r.selector
       if not field.handler: field.handler = r.handler
     return r
-
-@dataclass
-class Collector(Resource):
-  collector_type: CollectorType = "evm"
-  interval: Interval = "h1"
-  collection_time: datetime = None
-  cron: Optional[Cron] = None
 
   def signature(self) -> str:
     return f"{self.name}-{self.resource_type}-{self.interval}-{self.collector_type}"\
@@ -120,15 +129,15 @@ class Collector(Resource):
 
 @dataclass
 class Config:
-  scrapper: List[Collector] = field(default_factory=list)
-  http_api: List[Collector] = field(default_factory=list)
-  ws_api: List[Collector] = field(default_factory=list)
-  fix_api: List[Collector] = field(default_factory=list)
-  evm: List[Collector] = field(default_factory=list)
-  solana: List[Collector] = field(default_factory=list)
-  cosmos: List[Collector] = field(default_factory=list)
-  sui: List[Collector] = field(default_factory=list)
-  ton: List[Collector] = field(default_factory=list)
+  scrapper: list[Collector] = field(default_factory=list)
+  http_api: list[Collector] = field(default_factory=list)
+  ws_api: list[Collector] = field(default_factory=list)
+  fix_api: list[Collector] = field(default_factory=list)
+  evm: list[Collector] = field(default_factory=list)
+  solana: list[Collector] = field(default_factory=list)
+  cosmos: list[Collector] = field(default_factory=list)
+  sui: list[Collector] = field(default_factory=list)
+  ton: list[Collector] = field(default_factory=list)
 
   @classmethod
   def from_dict(cls, data: dict) -> 'Config':

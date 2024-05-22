@@ -11,18 +11,18 @@ SCHEDULER_BY_TYPE: dict[CollectorType, callable] = {
   "scrapper": collectors.scrapper.schedule,
   "http_api": collectors.http_api.schedule,
   "ws_api": collectors.ws_api.schedule,
+  "evm": collectors.evm.schedule,
   # "fix_api": collectors.fix_api.schedule,
-  # "evm": collectors.evm.schedule,
 }
 
 async def schedule(c: Collector) -> list[asyncio.Task]:
   if is_task_claimed(c):
-    log_warn(f"Skipping collection for {c.name}-{c.interval}, task is already claimed by another worker...")
+    log_warn(f"Skipping collection for {c.name}.{c.interval}, task is already claimed by another worker...")
     return
   fn = SCHEDULER_BY_TYPE.get(c.collector_type, None)
   if not fn:
     raise ValueError(f"Unsupported collector type: {c.type}")
   claim_task(c)
   tasks = await fn(c)
-  log_debug(f"Scheduled for collection: {c.name}-{c.interval} [{', '.join([field.name for field in c.data])}]")
+  log_debug(f"Scheduled for collection: {c.name}.{c.interval} [{', '.join([field.name for field in c.data])}]")
   return tasks

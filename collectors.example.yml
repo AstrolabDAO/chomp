@@ -3,7 +3,7 @@
 # html scrappers
 scrapper:
   - name: TakeIchiConvoyStats
-    interval: Y1 # see model.py for available intervals
+    interval: m1 # see model.py for available intervals
     resource_type: value # value (inplace document), series, timeseries
     target: https://en.wikipedia.org/wiki/Take_Ichi_convoy
     data:
@@ -44,7 +44,7 @@ http_api:
       - name: DOGEUSDC
         type: float64
         selector: .dogecoin.usd
-        transformers: ["{self} * {USDCUSD}", "round4"]
+        transformers: ["{self} * {USDCUSD}", "round6"]
       - name: PEPEUSDC
         type: float64
         selector: .pepe.usd
@@ -79,7 +79,7 @@ ws_api:
         target: wss://stream.binance.com:9443/ws/usdcusdt@trade
         reducer: "lambda epochs: (mean(epochs[0]['bids']) + mean(epochs[0]['asks'])) / 2"
         transformers: ["round6"]
-      - name: USDCUSDT.spread
+      - name: USDCUSDT_spread
         type: float64
         target: wss://stream.binance.com:9443/ws/usdcusdt@trade
         reducer: "lambda epochs: mean(epochs[0]['asks']) - mean(epochs[0]['bids'])"
@@ -89,7 +89,7 @@ ws_api:
         target: wss://stream.binance.com:9443/ws/btcusdt@trade
         reducer: "lambda epochs: (mean(epochs[0]['bids']) + mean(epochs[0]['asks'])) / 2"
         transformers: ["{self} * {USDCUSDT}", "round2"]
-      - name: BTCUSDC.spread
+      - name: BTCUSDC_spread
         type: float64
         target: wss://stream.binance.com:9443/ws/btcusdt@trade
         reducer: "lambda epochs: mean(epochs[0]['asks']) - mean(epochs[0]['bids'])"
@@ -99,7 +99,7 @@ ws_api:
         target: wss://stream.binance.com:9443/ws/ethusdt@trade
         reducer: "lambda epochs: (mean(epochs[0]['bids']) + mean(epochs[0]['asks'])) / 2"
         transformers: ["{self} * {USDCUSDT}", "round2"]
-      - name: ETHUSDC.spread
+      - name: ETHUSDC_spread
         type: float64
         target: wss://stream.binance.com:9443/ws/ethusdt@trade
         reducer: "lambda epochs: mean(epochs[0]['asks']) - mean(epochs[0]['bids'])"
@@ -109,24 +109,46 @@ fix_api: []
 
 # evm collectors
 evm:
-  - name: DummyEvmContractCollector
-    interval: m15
+  - name: ChainlinkPriceFeeds
+    interval: m1
     resource_type: timeseries
     data:
-      - name: EvmValue1
-        type: float
-        target: "137:0x1234567890123456789012345678901234567890" # chainId:address
-        selector: balanceOf(address) # function signature
-        parameters: ["0x1234567890123456789012345678901234567890"] # function parameters
-        transformers: ["{self::median('W1')}"]
-      - name: EvmValue2
-        type: float
-        target: "137:0x1234567890123456789012345678901234567890" # chainId:address
-        selector: totalSupply()
-        parameters: []
-      - name: EvmMedian1
-        type: float
-        transformers: ["{EvmValue1::median('W1')}"] # no need for selector if the value is computed
+      - name: USDCUSD_decimals
+        type: uint8
+        target: "137:0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7" # chainId:address
+        selector: decimals()(uint8)
+        params: []
+      - name: USDCUSD
+        type: float64
+        target: "137:0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7" # chainId:address
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
+        params: []
+        transformers: ["{self}[1] / 10 ** {USDCUSD_decimals}", "round6"]
+      - name: BTCUSD_decimals
+        type: uint8
+        target: "137:0xc907E116054Ad103354f2D350FD2514433D57F6f"
+        selector: decimals()(uint8)
+        params: []
+      - name: BTCUSDC
+        type: float64
+        target: "137:0xc907E116054Ad103354f2D350FD2514433D57F6f" # chainId:address
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80)) # function signature
+        params: []
+        transformers: ["({self}[1] / 10 ** {BTCUSD_decimals}) * {USDCUSD}", "round2"]
+      - name: ETHUSD_decimals
+        type: uint8
+        target: "137:0xF9680D99D6C9589e2a93a78A04A279e509205945"
+        selector: decimals()(uint8)
+        params: []
+      - name: ETHUSDC
+        type: float64
+        target: "137:0xF9680D99D6C9589e2a93a78A04A279e509205945"
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
+        params: []
+        transformers: ["({self}[1] / 10 ** {ETHUSD_decimals}) * {USDCUSD}", "round2"]
+      # - name: BTCUSDC.median
+      #   type: float64
+      #   transformers: ["{EvmValue1::median('W1')}"] # no need for selector if the value is computed
 
 # other collectors
 solana: []

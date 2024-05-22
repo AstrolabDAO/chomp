@@ -101,10 +101,11 @@ def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> a
 def transform(c: Collector, f: ResourceField) -> any:
   if not f.transformers or len(f.transformers) == 0:
     return f.value
-  if state.verbose:
-    log_debug(f"{c.name}.{f.name} before chained transform [{']['.join(f.transformers)}]: {{{f.value}}}")
+  before = f.value
   for t in f.transformers:
     f.value = apply_transformer(c, f, t)
+
+  c.data_by_field[f.name] = f.value
   if state.verbose:
-    log_debug(f"{c.name}.{f.name} after transform: {{{f.name}: {f.value}}}")
+    log_debug(f"Transformed {c.name}.{f.name}: {before} -> [{']['.join(f.transformers)}] -> {f.value}")
   return f.value
