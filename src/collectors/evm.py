@@ -20,8 +20,7 @@ async def schedule(c: Collector) -> list[Task]:
 
     for field in c.data:
       if not field.target:
-        log_error(f"Missing target smart contract view for field {c.name}.{field.name}, skipping...")
-        continue
+        continue # transform-only fields (derived from others)
       if field.id in unique_calls:
         log_warn(f"Duplicate target smart contract view {field.target} in {c.name}.{field.name}, skipping...")
         continue
@@ -50,7 +49,7 @@ async def schedule(c: Collector) -> list[Task]:
 
     # run transformers field by field sequentially as described after chain by chain multicall execution
     for field in c.data:
-      if field.value and field.transformers:
+      if field.transformers:
         field.value = transform(c, field)
 
     c.collection_time = floor_utc(c.interval)

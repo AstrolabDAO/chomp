@@ -35,12 +35,15 @@ FieldType = Literal[
   "float32", "ufloat32", # float, ufloat
   "float64", "ufloat64", # double, udouble
   "bool", "timestamp", "string", "binary", "varbinary"]
+HttpMethod = Literal["GET", "POST", "PUT", "DELETE", "PATCH"]
 
 @dataclass
 class Targettable:
   name: str
   target: str = ""
   selector: str = ""
+  method: HttpMethod = "GET"
+  headers: dict[str, str] = field(default_factory=dict)
   params: list[str|int|float] = field(default_factory=list)
   handler: str = "" # for streams only (json ws, fix...)
   reducer: str = "" # for streams only (json ws, fix...)

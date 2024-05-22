@@ -3,7 +3,7 @@
 # html scrappers
 scrapper:
   - name: TakeIchiConvoyStats
-    interval: m1 # see model.py for available intervals
+    interval: Y1 # see model.py for available intervals
     resource_type: value # value (inplace document), series, timeseries
     target: https://en.wikipedia.org/wiki/Take_Ichi_convoy
     data:
@@ -33,6 +33,7 @@ http_api:
       - name: USDCUSD
         type: float64
         selector: .usd-coin.usd
+        transformers: ["round6"]
       - name: BTCUSDC
         type: float64
         selector: .bitcoin.usd
@@ -41,16 +42,60 @@ http_api:
         type: float64
         selector: .ethereum.usd
         transformers: ["{self} * {USDCUSD}", "round2"]
-      - name: DOGEUSDC
+      # - name: DOGEUSDC
+      #   type: float64
+      #   selector: .dogecoin.usd
+      #   transformers: ["{self} * {USDCUSD}", "round6"]
+      # - name: PEPEUSDC
+      #   type: float64
+      #   selector: .pepe.usd
+      #   transformers: ["{self} * {USDCUSD}", "round10"]
+
+  - name: OdosPriceFeeds
+    interval: s30
+    resource_type: timeseries
+    target: https://api.odos.xyz/pricing/token/1 # ethereum only
+    data:
+      - name: USDCUSD
         type: float64
-        selector: .dogecoin.usd
-        transformers: ["{self} * {USDCUSD}", "round6"]
-      - name: PEPEUSDC
+        selector: tokenPrices.0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+        transformers: ["round6"]
+      - name: BTCUSDC
         type: float64
-        selector: .pepe.usd
-        transformers: ["{self} * {USDCUSD}", "round10"]
+        selector: tokenPrices.0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599
+        transformers: ["{self} * {USDCUSD}", "round2"]
+      - name: ETHUSDC
+        type: float64
+        selector: tokenPrices.0x0000000000000000000000000000000000000000
+        transformers: ["{self} * {USDCUSD}", "round2"]
 
 ws_api:
+  # - name: CoinMarketcapPriceFeeds
+  #   interval: s30
+  #   resource_type: timeseries
+  #   target: wss://push.coinmarketcap.com/ws?device=web&client_source=home_page
+  #   selector: root
+  #   headers:
+  #     Host: push.coinmarketcap.com
+  #     Origin: https://coinmarketcap.com
+  #   handler: |
+  #     def h(msg, epochs):
+  #       d = msg['d']
+  #       epochs[0].setdefault(int(d['id']), []).append(float(d['p']))
+  #   data:
+  #     - name: USDCUSD
+  #       type: float64
+  #       reducer: "lambda epochs: mean(epochs[0][3408])"
+  #       transformers: ["round6"]
+  #     - name: BTCUSDC
+  #       type: float64
+  #       reducer: "lambda epochs: mean(epochs[0][1])"
+  #       transformers: ["{self} * {USDCUSD}", "round2"]
+  #     - name: ETHUSDC
+  #       type: float64
+  #       reducer: "lambda epochs: mean(epochs[0][1027])"
+  #       transformers: ["{self} * {USDCUSD}", "round2"]
+
   - name: BinancePriceFeeds
     interval: s30
     resource_type: timeseries
@@ -110,7 +155,7 @@ fix_api: []
 # evm collectors
 evm:
   - name: ChainlinkPriceFeeds
-    interval: m1
+    interval: s30
     resource_type: timeseries
     data:
       - name: USDCUSD_decimals
@@ -146,9 +191,29 @@ evm:
         selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
         params: []
         transformers: ["({self}[1] / 10 ** {ETHUSD_decimals}) * {USDCUSD}", "round2"]
-      # - name: BTCUSDC.median
+      # - name: BTCUSDC_median
       #   type: float64
       #   transformers: ["{EvmValue1::median('W1')}"] # no need for selector if the value is computed
+
+  - name: UniswapPriceFeeds
+    interval: s30
+    resource_type: timeseries
+    data:
+      - name: ETHUSDC
+        type: float64
+        target: "1:0x88e6a0c2ddd26feeb64f039a2c41296fcb3f5640"
+        selector: slot0()((uint160,int24,uint16,uint16,uint16,uint8,bool))
+        params: []
+        transformers: ["2 ** 192 / ({self}[0] ** 2) * 1e12", "round2"] # inverse of (sqrtPriceX96 / (2**96))**2 * usdc wei per unit
+      - name: BTCETH
+        type: float64
+        target: "1:0x4585fe77225b41b697c938b018e2ac67ac5a20c0" # chainId:address
+        selector: slot0()((uint160,int24,uint16,uint16,uint16,uint8,bool))
+        params: []
+        transformers: ["(({self}[0] ** 2) / 2 ** 192) / 1e10", "round6"]
+      - name: BTCUSDC
+        type: float64
+        transformers: ["{BTCETH} * {ETHUSDC}", "round2"]
 
 # other collectors
 solana: []

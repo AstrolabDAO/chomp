@@ -75,12 +75,14 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
     ensure_claim_task(c)
     # batch of reducers/transformers by route
     # iterate over key/value pairs
+    collected_batches = 0
     for route_hash, batch in batched_fields_by_route.items():
       url = batch[0].target
       epochs = epochs_by_route.get(url, None)
       if not epochs[0]:
         log_warn(f"Missing state for {c.name} {url} collection, skipping...")
         continue
+      collected_batches += 1
       for field in batch:
         # reduce the state to a collectable value
         field.value = field.reducer(epochs)
@@ -99,8 +101,11 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
       epochs.appendleft({}) # new epoch
     if state.verbose:
       log_debug(f"{c.name} collector state:\n{c.data_by_field}")
-    c.collection_time = floor_utc(c.interval) # round down to theoretical task time
-    await store(c)
+    if collected_batches > 0:
+      c.collection_time = floor_utc(c.interval) # round down to theoretical task time
+      await store(c)
+    else:
+      log_warn(f"No data collected for {c.name}, waiting for ws state to aggregate...")
 
   tasks = []
   for field in c.data:
