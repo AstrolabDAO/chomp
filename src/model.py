@@ -4,7 +4,7 @@ from hashlib import md5
 from aiocron import Cron
 from typing import Literal, Optional, Type
 
-from utils import interval_to_seconds
+from utils import extract_time_unit, interval_to_seconds
 from web3 import Web3
 
 ResourceType = Literal[
@@ -113,6 +113,10 @@ class Collector(Resource, Targettable):
   def interval_sec(self) -> int:
     return interval_to_seconds(self.interval)
 
+  @property
+  def precision(self) -> TimeUnit:
+    return extract_time_unit(self.interval)
+
   def __hash__(self) -> int:
     return hash(self.id)
 
@@ -155,7 +159,7 @@ class Config:
 @dataclass
 class Tsdb:
   host: str = "localhost"
-  port: int = "6030"
+  port: int = 6030
   db: str = "default"
   user: str = "rw"
   password: str = "pass"
@@ -165,19 +169,21 @@ class Tsdb:
   @classmethod
   async def connect(cls, host: str, port: int, db: str, user: str, password: str):
     raise NotImplementedError
+  async def ensure_connected(self):
+    raise NotImplementedError
   async def close(self):
     raise NotImplementedError
-  async def create_db(self, name: str, options: dict):
+  async def create_db(self, name: str, options: dict, force=False):
     raise NotImplementedError
   async def use_db(self, db: str):
     raise NotImplementedError
-  async def create_table(self, schema: Type, name_override=""):
+  async def create_table(self, c: Collector, name=""):
     raise NotImplementedError
   async def insert(self, c: Collector, table=""):
     raise NotImplementedError
   async def insert_many(self, c: Collector, values: list[tuple], table=""):
     raise NotImplementedError
-  async def fetch(self, table: str, query: str):
+  async def fetch(self, table: str, from_date: datetime, to_date: datetime, aggregation_interval: Interval, columns: list[str]):
     raise NotImplementedError
   async def fetchall(self):
     raise NotImplementedError

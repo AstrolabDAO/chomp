@@ -75,7 +75,31 @@ SEC_BY_TF: dict[str, int] = {
   "Y1": 31536000,
 }
 
-def interval_to_cron(interval: str):
+INTERVAL_TO_SQL: dict[str, str] = {
+  "m1": "1 minute",
+  "m2": "2 minutes",
+  "m5": "5 minutes",
+  "m10": "10 minutes",
+  "m15": "15 minutes",
+  "m30": "30 minutes",
+  "h1": "1 hour",
+  "h2": "2 hours",
+  "h4": "4 hours",
+  "h6": "6 hours",
+  "h8": "8 hours",
+  "h12": "12 hours",
+  "D1": "1 day",
+  "D2": "2 days",
+  "D3": "3 days",
+  "W1": "1 week",
+  "M1": "1 month",
+  "Y1": "1 year"
+}
+
+def interval_to_sql(interval: str) -> str:
+  return INTERVAL_TO_SQL.get(interval, None)
+
+def interval_to_cron(interval: str) -> str:
   cron = CRON_BY_TF.get(interval, None)
   if not cron:
     raise ValueError(f"Invalid interval: {interval}")
@@ -91,9 +115,17 @@ delta_by_unit: dict[str, callable] = {
   "Y": lambda n: relativedelta(years=n),
 }
 
-def interval_to_delta(timeframe, backwards=False):
+def extract_time_unit(interval: str) -> str:
+  match = re.match(r"(\d+)([a-zA-Z]+)", interval)
+  if match:
+    value, unit = match.groups()
+    return unit, int(value)
+  else:
+    raise ValueError(f"Invalid time frame format: {interval}")
+
+def interval_to_delta(interval: str, backwards=False) -> timedelta:
   pattern = r"([smhDWMY])(\d+)"
-  match = re.match(pattern, timeframe)
+  match = re.match(pattern, interval)
   if not match:
     raise ValueError(f"Invalid time unit. Only {', '.join(delta_by_unit.keys())} are supported.")
 
@@ -115,7 +147,9 @@ def interval_to_seconds(interval: str, raw=False) -> int:
     secs = round((now + delta - now).total_seconds())
   return secs
 
-def date_interval_floor(interval: str, date=datetime.now(UTC)) -> datetime:
+def date_interval_floor(interval: str, date: Optional[datetime]) -> datetime:
+  if not date:
+    date = datetime.now(UTC)
   interval_sec = interval_to_seconds(interval)
   epoch_sec = int(date.timestamp())
   floored_epoch = epoch_sec - (epoch_sec % interval_sec)
@@ -125,10 +159,9 @@ def date_interval_floor(interval: str, date=datetime.now(UTC)) -> datetime:
 def floor_utc(interval: str="m1") -> datetime:
   return date_interval_floor(interval, datetime.now(UTC))
 
-def interval_to_sql(interval: str) -> str:
-  return interval[1] + interval[0];
-
-def shift_date(timeframe, date=datetime.now(UTC), backwards=False):
+def shift_date(timeframe, date: Optional[datetime], backwards=False):
+  if not date:
+    date = datetime.now(UTC)
   return date + interval_to_delta(timeframe, backwards)
 
 def select_from_dict(selector: Optional[str], data: dict) -> any:
@@ -143,6 +176,8 @@ def select_from_dict(selector: Optional[str], data: dict) -> any:
         break
   return data
 
-def generate_hash(derive_from=datetime.now(UTC), length=32) -> str:
+def generate_hash(derive_from: Optional[str], length=32) -> str:
+  if not derive_from:
+    derive_from = datetime.now(UTC).isoformat()
   hash_fn = md5 if length <= 32 else sha256
   return hash_fn((str(derive_from) + urandom(64).hex()).encode()).hexdigest()[:length]

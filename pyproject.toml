@@ -6,15 +6,18 @@ authors = [
     # {name = "JakeTheSlug", email = "jake@astrolab.fi"},
 ]
 dependencies = [
-    "redis>=5.0.4",
-    "taospy>=2.7.13",
-    "eth-ape>=0.7.19",
-    "python-dotenv>=1.0.1",
-    "bs4>=0.0.2",
     "pyyaml>=6.0.1",
-    "multicall>=0.9.0",
+    "python-dotenv>=1.0.1",
     "aiocron>=1.8",
+    "redis>=5.0.4",
+    "bs4>=0.0.2",
     "lxml>=5.2.2",
+    "multicall>=0.9.0",
+    "web3>=6.19.0",
+    "taospy>=2.7.13",
+    # "asyncpg>=0.29.0",
+    # "pymongo>=4.7.2",
+    # "opentsdb-py>=0.6.0",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
