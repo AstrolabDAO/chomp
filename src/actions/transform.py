@@ -4,9 +4,8 @@ import json
 from hashlib import sha256, md5
 import numpy as np
 
-import src.state as state
 from src.model import Collector, Resource, ResourceField, Tsdb
-from src.actions.load import load_series
+from src.actions.load import load
 from src.safe_eval import safe_eval
 from src.utils import interval_to_delta, log_debug
 
@@ -53,6 +52,7 @@ SERIES_TRANSFORMERS: dict[str, callable] = {
   "prod": lambda r, series: np.prod(series)
 }
 
+# TODO: optimize
 def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> any:
   if not transformer:
     return field.value
@@ -90,7 +90,7 @@ def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> a
           if not target_field:
             raise ValueError(f"Invalid transformer target: {target}")
         # step 7: extract the series from the target field
-        series = load_series(c, from_date, interval=c.interval, field=target_field)
+        series = load(c, from_date, interval=c.interval, field=target_field)
         # step 8: apply the series transformer
         res = SERIES_TRANSFORMERS.get(fn)(c, series)
         # step 9: inject the result in the transformer for recursive evaluation
@@ -101,11 +101,7 @@ def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> a
 def transform(c: Collector, f: ResourceField) -> any:
   if not f.transformers or len(f.transformers) == 0:
     return f.value
-  before = f.value
   for t in f.transformers:
     f.value = apply_transformer(c, f, t)
-
   c.data_by_field[f.name] = f.value
-  if state.verbose:
-    log_debug(f"Transformed {c.name}.{f.name}: {before} -> [{']['.join(f.transformers)}] -> {f.value}")
   return f.value

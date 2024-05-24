@@ -64,8 +64,8 @@ class Kdb(Tsdb):
     user=env.get("DB_RW_USER", "rw"),
     password=env.get("DB_RW_PASS", "pass")
   ) -> "Kdb":
-    self = cls(**locals())
-    self.ensure_connected()
+    self = cls(host, port, user, password)
+    await self.ensure_connected()
     return self
 
   async def close(self):
@@ -98,8 +98,7 @@ class Kdb(Tsdb):
 
   async def insert(self, c: Collector, table: str = ""):
     table = table or c.name
-    fields = ", ".join([field.name for field in c.data])
-    values = ", ".join([f"{field.value}" for field in c.data])
+    values = ", ".join([f"{field.value}" for field in c.data if not field.transient])
     insert_query = f"{table}.insert((.z.p; {values}))"
     try:
       self.conn.ks(insert_query)
@@ -109,9 +108,8 @@ class Kdb(Tsdb):
 
   async def insert_many(self, c: Collector, values: list[tuple], table: str = ""):
     table = table or c.name
-    fields = ", ".join([field.name for field in c.data])
     values_str = ", ".join([f"({', '.join(str(v) for v in value)})" for value in values])
-    insert_query = f"{table}.insert(({', '.join(['.z.p'] + [field.name for field in c.data])}) each {values_str})"
+    insert_query = f"{table}.insert(({', '.join(['.z.p'] + [field.name for field in c.data if not field.transient])}) each {values_str})"
     try:
       self.conn.ks(insert_query)
     except KdbException as e:

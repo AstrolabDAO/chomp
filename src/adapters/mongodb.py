@@ -45,7 +45,7 @@ class MongoDb(Tsdb):
     user=env.get("DB_RW_USER", "rw"),
     password=env.get("DB_RW_PASS", "pass")
   ) -> "MongoDb":
-    self = cls(**locals())
+    self = cls(host, port, db, user, password)
     self.client = MongoClient(host, port, username=user, password=password)
     self.db = self.client[db]
     if not self.client or not self.db:
@@ -64,7 +64,6 @@ class MongoDb(Tsdb):
     return self.client[self.db]
 
   async def create_db(self, name: str, options=None, force=False):
-    self.ensure_connected()
     if name not in self.get_db().list_collection_names():
       self.get_db().create_collection(name)
       log_info(f"Created collection {name}")
@@ -83,14 +82,15 @@ class MongoDb(Tsdb):
     table = table or c.name
     self.collection = self.get_db()[table]
     data = {"_id": c.collection_time}
-    for field in c.data:
+    persistent_data = {field.name: field.value for field in c.data if not field.transient}
+    for field in persistent_data:
       data[field.name] = field.value
     self.collection.insert_one(data)
 
   async def insert_many(self, c: Collector, values: List[tuple], table: str = ""):
     table = table or c.name
     self.collection = self.get_db()[table]
-    data = [{"_id": value[0], **{field.name: value[i + 1] for i, field in enumerate(c.data)}} for value in values]
+    data = [{"_id": value[0], **{field.name: value[i + 1] for i, field in enumerate(c.data) if not field.transient}} for value in values]
     self.collection.insert_many(data)
 
   async def fetch(self, table: str, from_date: Optional[datetime], to_date: Optional[datetime], aggregation_interval: Optional[Interval], columns: List[str] = []):

@@ -172,7 +172,7 @@ def select_from_dict(selector: Optional[str], data: dict) -> any:
     for key in selector.split("."):
       data = data.get(key, None)
       if not data:
-        log_error(f"Failed to find element {selector} in fetched json, skipping...")
+        log_warn(f"Failed to find element {selector} in {data}, skipping...")
         break
   return data
 

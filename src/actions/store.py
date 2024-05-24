@@ -1,19 +1,19 @@
 from datetime import datetime, UTC
-import json
 from typing import Optional
+import json
 
-from src.state import get_tsdb
-from src.model import CollectorType, Resource, Collector, Interval, ResourceType, Tsdb
+import src.state as state
+from src.model import Collector
 from src.cache import cache
 
 async def store(c: Collector, table="") -> list:
   if c.resource_type == "value":
-    return cache(c.id, json.dumps(c.values_dict())) # max expiry
-  return await (get_tsdb().insert(c, table))
+    return await cache(c.id, json.dumps(c.values_dict())) # max expiry
+  return await state.tsdb.insert(c, table)
 
 async def store_batch(c: Collector, values: list, from_date: datetime, to_date: Optional[datetime], aggregation_interval=None) -> dict:
   if not to_date:
     to_date = datetime.now(UTC)
   if c.resource_type == "value":
     raise ValueError("Cannot store batch for inplace value collectors (series data required)")
-  return await (get_tsdb().insert_many(c, values, from_date, to_date, aggregation_interval))
+  return await state.tsdb.insert_many(c, values, from_date, to_date, aggregation_interval)

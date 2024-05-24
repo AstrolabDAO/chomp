@@ -42,8 +42,8 @@ class OpenTSDB:
     user=env.get("DB_RW_USER", "rw"),
     password=env.get("DB_RW_PASS", "pass")
   ) -> "OpenTSDB":
-    self = cls(**locals())
-    self.ensure_connected()
+    self = cls(host, port, user, password)
+    await self.ensure_connected()
     return self
 
   async def close(self):
@@ -67,7 +67,8 @@ class OpenTSDB:
   async def insert(self, c: Collector, table=""):
     table = table or c.name
     data_points = []
-    for field in c.data:
+    persistent_data = [field for field in c.data if not field.transient]
+    for field in persistent_data:
       data_points.append({
         "metric": f"{c.name}.{field.name}", # can also use "tags": {"collector": c.name}
         "value": field.value,
@@ -77,8 +78,9 @@ class OpenTSDB:
 
   async def insert_many(self, c: Collector, values: list[tuple], table=""):
     data_points = []
+    persistent_data = [field for field in c.data if not field.transient]
     for value in values:
-      for i, field in enumerate(c.data):
+      for i, field in enumerate(persistent_data):
         data_point = {
           "metric": f"{c.name}.{field.name}",
           "value": value[i+1],

@@ -16,33 +16,39 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
   epochs_by_route: dict[str, deque[dict]] = {}
   default_handler_by_route: dict[str, callable] = {}
   batched_fields_by_route: dict[str, list[ResourceField]] = {}
+  subscriptions = set()
 
   # sub function (one per route)
-  async def subscribe(c: Collector, url: str, route_hash: str):
+  async def subscribe(c: Collector, field: ResourceField, route_hash: str):
+
+    url = field.target
     if state.verbose:
-      log_debug(f"Subscribing to {url} for {c.name}.{c.interval}...")
+      log_debug(f"Subscribing to {url} for {c.name}.{field.name}.{c.interval}...")
 
     retry_count = 0
 
     while retry_count <= state.max_retries:
       try:
         async with websockets.connect(url) as ws:
+          if field.params:
+            await ws.send(json.dumps(field.params)) # send subscription params if any (eg. api key, stream list...)
           # initialize route state for reducers and transformers to use
           epochs_by_route.setdefault(url, deque([{}]))
           while True:
             if ws.closed:
-              log_error(f"{url} ws connection closed for {c.name}")
+              log_error(f"{url} ws connection closed for {c.name}.{field.name}...")
               break
             res = await ws.recv() # poll for data
             res = json.loads(res)
             handled = {}
             for field in batched_fields_by_route[route_hash]:
               if field.handler and not handled.get(field.handler, {}).get(field.selector, False):
-                data = select_from_dict(field.selector, res)
                 try:
-                  field.handler(data, epochs_by_route[url]) # map data with handler
+                  data = select_from_dict(field.selector, res)
+                  if data:
+                    field.handler(data, epochs_by_route[url]) # map data with handler
                 except Exception as e:
-                  log_error(f"Failed to handle websocket data from {url} for {c.name}: {e}")
+                  log_warn(f"Failed to handle websocket data from {url} for {c.name}.{field.name}: {e}")
                 handled.setdefault(field.handler, {})[field.selector] = True
 
             # if state.verbose: # <-- way too verbose
@@ -72,7 +78,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
   async def collect(c: Collector):
     if state.verbose:
       log_debug(f"Collecting {c.name}.{c.interval}")
-    ensure_claim_task(c)
+    await ensure_claim_task(c)
     # batch of reducers/transformers by route
     # iterate over key/value pairs
     collected_batches = 0
@@ -130,7 +136,10 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
       batched_fields_by_route.setdefault(route_hash, []).append(field)
       if not route_hash in default_handler_by_route and field.handler:
         default_handler_by_route[route_hash] = field.handler
-      tasks.append(subscribe(c, url, route_hash))
+      if field.target_id in subscriptions:
+        continue # only subscribe once per socket route+selector+params combo
+      subscriptions.add(field.target_id)
+      tasks.append(subscribe(c, field, route_hash))
 
   # globally register/schedule the collector
   return tasks + [state.add_cron(c.id, fn=collect, args=(c,), interval=c.interval)]

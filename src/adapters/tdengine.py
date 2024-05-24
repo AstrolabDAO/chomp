@@ -50,8 +50,8 @@ class Taos(Tsdb):
     user=env.get("DB_RW_USER", "rw"),
     password=env.get("DB_RW_PASS", "pass")
   ) -> "Taos":
-    self = cls(**locals())
-    self.ensure_connected()
+    self = cls(host, port, db, user, password)
+    await self.ensure_connected()
     return self
 
   async def close(self):
@@ -112,7 +112,6 @@ class Taos(Tsdb):
       self.conn.select_db(db)
 
   async def create_table(self, c: Collector, name=""):
-    await self.ensure_connected()
     table = name or c.name
     log_info(f"Creating table {self.db}.{table}...")
     fields = ", ".join([f"`{field.name}` {TYPES[field.type]}" for field in c.data])
@@ -130,9 +129,11 @@ class Taos(Tsdb):
       raise e
 
   async def insert(self, c: Collector, table=""):
+    await self.ensure_connected()
     table = table or c.name
-    fields = "`, `".join([field.name for field in c.data])
-    values = ", ".join([f"{field.value}" for field in c.data])
+    persistent_data = [field for field in c.data if not field.transient]
+    fields = "`, `".join(field.name for field in persistent_data)
+    values = ", ".join([field.sql_escape() for field in persistent_data])
     sql = f"INSERT INTO {self.db}.{table} (ts, `{fields}`) VALUES ('{c.collection_time}', {values});"
     try:
       self.cursor.execute(sql)
@@ -146,10 +147,10 @@ class Taos(Tsdb):
         raise e
 
   async def insert_many(self, c: Collector, values: list[tuple], table=""):
-    await self.ensure_connected()
     table = table or c.name
-    fields = "`, `".join([field.name for field in c.data])
-    field_count = len(c.data)
+    persistent_fields = [field.name for field in c.data if not field.transient]
+    fields = "`, `".join(persistent_fields)
+    field_count = len(persistent_fields)
     stmt = self.conn.statement(f"INSER INTO {self.db}.{table} VALUES(?" + ",?" * (field_count - 1) + ")")
     params = new_multi_binds(field_count)
     types = [PREPARE_STMT[field.type] for field in c.data]

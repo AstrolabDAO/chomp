@@ -14,29 +14,43 @@ def get_adapter_class(adapter: TsdbAdapter) -> Type[Tsdb]:
   import src.adapters as adapters
   implementations: dict[TsdbAdapter, Type[Tsdb]] = {
     "tdengine": adapters.tdengine.Taos,
-    # "timescale": adapters.timescale.Timescale,
-    # "influx": adapters.influx.Influx,
+    # "timescale": adapters.timescale.TimescaleDb,
+    # "opentsdb": adapters.opentsdb.OpenTsdb,
+    # "questdb": adapters.questdb.QuestDb,
+    # "mongodb": adapters.mongodb.MongoDb,
+    # "duckdb": adapters.duckdb.DuckDb,
+    # "influxdb": adapters.influxdb.InfluxDb,
+    # "clickhouse": adapters.clickhouse.ClickHouse,
+    # "victoriametrics": adapters.victoriametrics.VictoriaMetrics,
+    # "kx": adapters.kx.Kdb,
   }
   return implementations.get(adapter.lower(), None)
 
 async def main():
-  # reload state to fetch .env config updates
   reload(state)
+  # reload state to fetch .env config updates
   tsdb_class = get_adapter_class(state.adapter)
   if not tsdb_class:
     raise ValueError(f"Missing or unsupported TSDB adapter: {state.adapter}, please use one of {', '.join([a.value for a in TsdbAdapter])}")
 
   # connect to cluster's TSDB
-  state.tsdb = await tsdb_class.connect()
+  state.tsdb.set_adapter(await tsdb_class.connect())
+
   # load collector configurations
-  config = state.get_config()
-  collectors = config.scrapper + config.http_api + config.ws_api + config.evm # + config.fix_api
+  config = state.config
+
+  # collectors = config.scrapper + config.http_api + config.ws_api + config.evm # + config.fix_api
+  collectors = config.evm
+
   # running collectors/workers integrity check
   await state.check_collectors_integrity(collectors)
+
   # identify tasks left unclaimed by workers
-  unclaimed = list(filter(lambda c: not is_task_claimed(c), collectors))
+  unclaimed = [c for c in collectors if not await is_task_claimed(c)]
+
   # cap the worker async tasks to the max allowed
   in_range = unclaimed[:state.max_tasks]
+
   # cli welcome message
   start_msg = """
   _____ _             ___       _ _           _
@@ -46,14 +60,14 @@ async def main():
    |_| |_| |_|\___|  \____\___/|_|_|\___,\___|__,\___/|_|
 
   Collector Name                | Type        | Interval | Fields    | Status           | Pickup Status
-  -----------------------------------------------------------------------------------------------------------\n"""
+ -----------------------------------------------------------------------------------------------------------------\n"""
   claims = 0
   for c in collectors:
     if c in in_range:
       claims += 1
     start_msg += f"  {c.name.ljust(30, ' ')}| {c.collector_type.ljust(12, ' ')}| {c.interval.ljust(9, ' ')}| {str(len(c.data)).rjust(2, '>')} fields "\
       + f"| {'unclaimed 🟢' if c in unclaimed else 'claimed 🔴'}\t"\
-      + f"| {'picked up 🟢' if c in in_range else 'not picked up 🔴'} ({claims}/{state.max_tasks})\n"
+      + f"| {f'picked up 🟢 ({claims}/{state.max_tasks})' if c in in_range else 'not picked up 🔴'}\n"
   log_info(start_msg)
   # schedule all tasks
   tasks = []
@@ -72,10 +86,10 @@ async def main():
   #   log_error(f"Unexpected error: {e}")
   # gracefully close connections to the TSDB and cache
   finally:
-    if state.tsdb:
-      await state.tsdb.close()
-    if state.redis:
-      state.redis.close()
+    if state._tsdb:
+      await state._tsdb.close()
+    if state._redis:
+      state._redis.close()
 
 if __name__ == "__main__":
   argparser = argparse.ArgumentParser(description="The Collector retrieves, transforms and archives data from various sources.")

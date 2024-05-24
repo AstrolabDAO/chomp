@@ -44,14 +44,19 @@ class Targettable:
   selector: str = ""
   method: HttpMethod = "GET"
   headers: dict[str, str] = field(default_factory=dict)
-  params: list[str|int|float] = field(default_factory=list)
+  params: list[any]|dict[str,any] = field(default_factory=list)
   handler: str = "" # for streams only (json ws, fix...)
   reducer: str = "" # for streams only (json ws, fix...)
   transformers: list[str] = field(default_factory=list)
 
+  @property
+  def target_id(self) -> str:
+    return md5((self.name + self.target + self.selector + str(self.params)).encode()).hexdigest()
+
 @dataclass
 class ResourceField(Targettable):
   type: FieldType = "float64"
+  transient: bool = False
   value: Optional[any] = None
 
   @classmethod
@@ -59,11 +64,14 @@ class ResourceField(Targettable):
     return cls(**d)
 
   def signature(self) -> str:
-    return f"{self.name}-{self.type}-{self.target}-{self.selector}-[{','.join(self.params)}]-[{','.join(self.transformers) if self.transformers else 'raw'}]"
+    return f"{self.name}-{self.type}-{self.target}-{self.selector}-[{','.join(str(self.params))}]-[{','.join(self.transformers) if self.transformers else 'raw'}]"
 
   @property
   def id(self) -> str:
     return md5(self.signature().encode()).hexdigest()
+
+  def sql_escape(self) -> str:
+    return f"'{self.value}'" if self.type in ["string", "binary", "varbinary"] else str(self.value)
 
   def chain_addr(self) -> tuple[str|int, str]:
     tokens = self.target.split(":")
@@ -98,6 +106,15 @@ class Collector(Resource, Targettable):
     for field in r.data:
       if not field.target: field.target = r.target
       if not field.selector: field.selector = r.selector
+      if not field.params: field.params = r.params
+      if isinstance(field.params, (list, tuple)):
+        for i in range(len(field.params)):
+          p = field.params[i]
+          if isinstance(p, str) and p.startswith("0x"):
+            if len(p) == 42: # ethereum address
+              pass # remains str
+            if len(p) == 66: # bytes32 (tx hash or else)
+              field.params[i] = bytes.fromhex(p[2:])
       if not field.handler: field.handler = r.handler
     return r
 
@@ -124,7 +141,7 @@ class Collector(Resource, Targettable):
     return [field.value for field in self.data]
 
   def values_dict(self):
-    return {field.name: field.value for field in self.data}
+    return {field.name: field.value for field in self.data if not field.transient}
 
   def load_values(self, values: list[any]):
     for i, field in enumerate(self.data):

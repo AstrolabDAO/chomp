@@ -27,7 +27,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
   tree_by_page: dict[str, html.HtmlElement] = {}
 
   async def collect(c: Collector):
-    ensure_claim_task(c)
+    await ensure_claim_task(c)
     expiry_sec = interval_to_seconds(c.interval)
     for field in c.data:
       url = field.target
@@ -37,7 +37,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
 
       # Create a unique key using a hash of the URL and interval
       page_hash = md5(f"{url}:{c.interval}".encode()).hexdigest()
-      page = get_or_set_cache(page_hash, lambda: get_page(url), expiry_sec)
+      page = await get_or_set_cache(page_hash, lambda: get_page(url), expiry_sec)
       if not page:
         log_error(f"Failed to fetch page {url}, skipping...")
         continue

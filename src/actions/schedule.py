@@ -16,7 +16,7 @@ SCHEDULER_BY_TYPE: dict[CollectorType, callable] = {
 }
 
 async def schedule(c: Collector) -> list[asyncio.Task]:
-  if is_task_claimed(c):
+  if await is_task_claimed(c):
     log_warn(f"Skipping collection for {c.name}.{c.interval}, task is already claimed by another worker...")
     return
   fn = SCHEDULER_BY_TYPE.get(c.collector_type, None)

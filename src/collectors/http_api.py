@@ -23,7 +23,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
   async def collect(c: Collector):
     if state.verbose:
       log_debug(f"Collecting {c.name}.{c.interval}")
-    ensure_claim_task(c)
+    await ensure_claim_task(c)
     expiry_sec = interval_to_seconds(c.interval)
     for field in c.data:
       url = field.target
@@ -34,7 +34,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
       # Create a unique key using a hash of the URL and interval
       route_hash = md5(f"{url}:{c.interval}".encode()).hexdigest()
       if not route_hash in data_by_route:
-        data_str = get_or_set_cache(route_hash, lambda: fetch_json(url), expiry_sec)
+        data_str = await get_or_set_cache(route_hash, lambda: fetch_json(url), expiry_sec)
         data_by_route[route_hash] = json.loads(data_str)
 
       data = data_by_route[route_hash]

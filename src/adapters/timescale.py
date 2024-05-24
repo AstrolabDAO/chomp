@@ -49,7 +49,7 @@ partitioning_by_precision: dict[TimeUnit, str] = {
 }
 
 @dataclass
-class TimescaleTsdb(Tsdb):
+class TimescaleDb(Tsdb):
   pool: asyncpg.Pool = None
 
   @classmethod
@@ -60,9 +60,9 @@ class TimescaleTsdb(Tsdb):
     db: str = env.get("TIMESCALE_DB", "default"),
     user: str = env.get("DB_RW_USER", "rw"),
     password: str = env.get("DB_RW_PASS", "pass")
-  ) -> "TimescaleTsdb":
+  ) -> "TimescaleDb":
     self = cls(host, port, db, user, password)
-    self.ensure_connected()
+    await self.ensure_connected()
     return self
 
   async def close(self):
@@ -137,25 +137,28 @@ class TimescaleTsdb(Tsdb):
 
   async def insert(self, c: Collector, table: str = ""):
     table = table or c.name
-    fields = ", ".join([field.name for field in c.data])
-    values = ", ".join([f"${i+2}" for i in range(len(c.data))])
-    insert_query = f"INSERT INTO {table} (ts, {fields}) VALUES ($1, {values})"
+    persistent_data = [field for field in c.data if not field.transient]
+    fields = ", ".join(field.name for field in persistent_data)
+    values_tpl = ", ".join([f"${i+2}" for i in range(len(persistent_data))])
+    insert_query = f"INSERT INTO {table} (ts, {fields}) VALUES ($1, {values_tpl})"
     try:
-      await self.pool.execute(insert_query, c.collection_time, *[field.value for field in c.data])
+      await self.pool.execute(insert_query, c.collection_time, *[field.value for field in persistent_data])
     except asyncpg.UndefinedTableError as e:
       e = str(e).lower()
       if "relation" in e and "does not exist" in e:
         log_warn(f"Table {self.db}.{table} does not exist, creating it now...")
         await self.create_table(c, name=table)
-        await self.pool.execute(insert_query, c.collection_time, *[field.value for field in c.data])
+        await self.pool.execute(insert_query, c.collection_time, *[field.value for field in persistent_data])
       else:
         log_error(f"Failed to insert data into {self.db}.{table}", e)
         raise e
 
   async def insert_many(self, c: Collector, values: list[tuple], table: str = ""):
     table = table or c.name
-    fields = ", ".join([field.name for field in c.data])
-    values_str = ", ".join([f"(${i*len(c.data)+j+2})" for i in range(len(values)) for j in range(len(c.data))])
+    persistent_fields = [field for field in c.data if not field.transient]
+    fields = ", ".join([field.name for field in persistent_fields])
+    field_count = len(persistent_fields)
+    values_str = ", ".join([f"(${i*field_count+j+2})" for i in range(len(values)) for j in range(field_count)])
     insert_query = f"INSERT INTO {table} (time, {fields}) VALUES {values_str}"
     # flattened_values = [item for sublist in values for item in sublist]
     try:
