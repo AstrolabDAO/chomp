@@ -87,7 +87,7 @@ class Taos(Tsdb):
 
     if not self.cursor:
       self.cursor = self.conn.cursor()
-    if not self.conn or not self.cursor:
+    if not self.cursor:
       raise ValueError(f"Failed to connect to TDengine on {self.user}@{self.host}:{self.port}/{self.db}")
 
   async def get_dbs(self):
