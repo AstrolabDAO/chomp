@@ -29,7 +29,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
   async def collect(c: Collector):
     await ensure_claim_task(c)
     expiry_sec = interval_to_seconds(c.interval)
-    for field in c.data:
+    for field in c.fields:
       url = field.target
       if not url:
         log_error(f"Missing target URL for field scrapper {c.name}.{field.name}, skipping...")
@@ -75,4 +75,4 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
     await store(c)
 
   # globally register/schedule the collector
-  return [state.add_cron(c.id, fn=collect, args=(c,), interval=c.interval)]
+  return [await state.scheduler.add_collector(c, fn=collect, start=False)]

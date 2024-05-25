@@ -42,11 +42,12 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
             res = json.loads(res)
             handled = {}
             for field in batched_fields_by_route[route_hash]:
-              if field.handler and not handled.get(field.handler, {}).get(field.selector, False):
+              if field.handler and not handled.setdefault(field.handler, {}).get(field.selector, False):
                 try:
                   data = select_from_dict(field.selector, res)
                   if data:
                     field.handler(data, epochs_by_route[url]) # map data with handler
+                    pass
                 except Exception as e:
                   log_warn(f"Failed to handle websocket data from {url} for {c.name}.{field.name}: {e}")
                 handled.setdefault(field.handler, {})[field.selector] = True
@@ -118,7 +119,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
       log_warn(f"No data collected for {c.name}, waiting for ws state to aggregate...")
 
   tasks = []
-  for field in c.data:
+  for field in c.fields:
     url = field.target
 
     # Create a unique key using a hash of the URL and interval
@@ -148,5 +149,8 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
       subscriptions.add(field.target_id)
       tasks.append(subscribe(c, field, route_hash))
 
-  # globally register/schedule the collector
-  return tasks + [state.add_cron(c.id, fn=collect, args=(c,), interval=c.interval)]
+  # subscribe all at once, run in the background
+  asyncio.gather(*tasks)
+
+  # register/schedule the collector
+  return [await state.scheduler.add_collector(c, fn=collect, start=False)]

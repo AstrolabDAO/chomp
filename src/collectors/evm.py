@@ -17,9 +17,9 @@ async def schedule(c: Collector) -> list[Task]:
   async def collect(c: Collector):
     await ensure_claim_task(c)
     unique_calls, calls_by_chain = set(), {}
-    field_by_name = {f.name: f for f in c.data}
+    field_by_name = {f.name: f for f in c.fields}
 
-    for field in c.data:
+    for field in c.fields:
       if not field.target or field.id in unique_calls:
         if field.id in unique_calls:
           log_warn(f"Duplicate target smart contract view {field.target} in {c.name}.{field.name}, skipping...")
@@ -28,11 +28,11 @@ async def schedule(c: Collector) -> list[Task]:
 
       chain_id, addr = field.chain_addr()
       if chain_id not in calls_by_chain:
-        client = await state.get_web3_client(chain_id, rolling=True)
+        client = state.get_web3_client(chain_id, rolling=True)
         calls_by_chain[chain_id] = Multicall(calls=[], _w3=client, require_success=True) # gas_limit=50_000_000
       calls_by_chain[chain_id].calls.append(Call(target=addr, function=[field.selector, *field.params], returns=[[field.name, parse_generic]]))
 
-    tp = await state.get_thread_pool()
+    tp = state.get_thread_pool()
     for chain_id, multicall in calls_by_chain.items():
       try:
         output = None
@@ -42,7 +42,7 @@ async def schedule(c: Collector) -> list[Task]:
             output = tp.submit(multicall).result(timeout=3.5)
           except Exception as e: # (TimeoutError, FutureTimeoutError):
             log_error(f"Multicall for chain {chain_id} failed: {e}, switching RPC...")
-            multicall.w3 = await state.get_web3_client(chain_id, rolling=True)
+            multicall.w3 = state.get_web3_client(chain_id, rolling=True)
             retry_count += 1
 
         if not output:
@@ -60,7 +60,7 @@ async def schedule(c: Collector) -> list[Task]:
     if state.verbose:
       log_debug(f"Collected {c.name} -> {c.data_by_field}")
 
-    for field in c.data:
+    for field in c.fields:
       if field.transformers:
         try:
           tp.submit(transform, c, field).result(timeout=2)
@@ -74,4 +74,4 @@ async def schedule(c: Collector) -> list[Task]:
     await store(c)
 
   # globally register/schedule the collector
-  return [state.add_cron(c.id, fn=collect, args=(c,), interval=c.interval)]
+  return [await state.scheduler.add_collector(c, fn=collect, start=False)]

@@ -1,7 +1,8 @@
 import re
+from asyncio import iscoroutinefunction, new_event_loop
 from time import strftime
 from datetime import timedelta, datetime, UTC
-from typing import Literal, Optional
+from typing import Coroutine, Literal, Optional
 from dateutil.relativedelta import relativedelta
 from os import environ as env, urandom
 from hashlib import md5, sha256
@@ -18,15 +19,16 @@ def log(level: LogLevel="INFO", *args):
   with open(LOGFILE, "a+") as log:
     log.write(msg + "\n")
 
-def log_info(*args): log("INFO", *args)
-def log_error(*args): log("ERROR", *args)
-def log_debug(*args): log("DEBUG", *args)
-def log_warn(*args): log("WARN", *args)
+def log_debug(*args): log("DEBUG", *args); return True
+def log_info(*args): log("INFO", *args); return True
+def log_error(*args): log("ERROR", *args); return False
+def log_warn(*args): log("WARN", *args); return False
 
 CRON_BY_TF: dict[str, tuple] = {
   "s2": "* * * * * */2",  # every 2 seconds
   "s5": "* * * * * */5",  # every 5 seconds
   "s10": "* * * * * */10",  # every 10 seconds
+  "s15": "* * * * * */15",  # every 15 seconds
   "s20": "* * * * * */20",  # every 20 seconds
   "s30": "* * * * * */30",  # every 30 seconds
   "m1": "*/1 * * * *",  # every minute
@@ -53,6 +55,7 @@ SEC_BY_TF: dict[str, int] = {
   "s2": 2,
   "s5": 5,
   "s10": 10,
+  "s15": 15,
   "s20": 20,
   "s30": 30,
   "m1": 60,
@@ -165,19 +168,55 @@ def shift_date(timeframe, date: Optional[datetime], backwards=False):
   return date + interval_to_delta(timeframe, backwards)
 
 def select_from_dict(selector: Optional[str], data: dict) -> any:
-  # Traverse the json with the selector
-  if selector and selector not in {"", ".", "root"}:
-    if selector.startswith("."):
-      selector = selector[1:]
-    for key in selector.split("."):
-      data = data.get(key, None)
-      if not data:
-        log_warn(f"Failed to find element {selector} in {data}, skipping...")
-        break
-  return data
+
+  # invalid selectors
+  if selector and not isinstance(selector, str):
+    log_error("Invalid selector. Please use a valid path string")
+    return None
+
+  if not selector or [".", "root"].count(selector.lower()) > 0:
+    return data
+
+  # optional starting dot and "root" keyword (case-insensitive)
+  if selector.startswith("."):
+    selector = selector[1:]
+
+  current = data # base access
+  segment_pattern = re.compile(r'([^.\[\]]+)(?:\[(\d+)\])?') # match selector segments eg. ".key" or ".key[index]"
+
+  # loop through segments
+  for match in segment_pattern.finditer(selector):
+    key, index = match.groups()
+    if key.isnumeric() and not index:
+      key, index = None, int(key)
+    # dict access
+    if key and isinstance(current, dict):
+      current = current.get(key)
+    if not current:
+      return log_warn(f"Key not found in dict: {key}")
+    # list access
+    if index is not None:
+      index = int(index)
+      if not isinstance(current, list) or index >= len(current):
+        return log_error(f"Index out of range in dict.{key}: {index}")
+      current = current[index]
+  return current
 
 def generate_hash(derive_from: Optional[str], length=32) -> str:
   if not derive_from:
     derive_from = datetime.now(UTC).isoformat()
   hash_fn = md5 if length <= 32 else sha256
   return hash_fn((str(derive_from) + urandom(64).hex()).encode()).hexdigest()[:length]
+
+def run_async_in_thread(fn: Coroutine):
+    loop = new_event_loop()
+    try:
+      return loop.run_until_complete(fn)
+    except Exception as e:
+      log_error(f"Failed to run async function in thread: {e}")
+      loop.close()
+
+def submit_to_threadpool(executor, fn, *args, **kwargs):
+    if iscoroutinefunction(fn):
+        return executor.submit(run_async_in_thread, fn(*args, **kwargs))
+    return executor.submit(fn, *args, **kwargs)

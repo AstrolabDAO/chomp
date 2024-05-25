@@ -1,6 +1,6 @@
 import asyncio
 
-from src.cache import claim_task, is_task_claimed
+from src.cache import claim_task, ensure_claim_task, is_task_claimed
 import src.state as state
 from src.utils import log_debug, log_error, log_warn
 from src.model import Collector, CollectorType
@@ -16,13 +16,10 @@ SCHEDULER_BY_TYPE: dict[CollectorType, callable] = {
 }
 
 async def schedule(c: Collector) -> list[asyncio.Task]:
-  if await is_task_claimed(c):
-    log_warn(f"Skipping collection for {c.name}.{c.interval}, task is already claimed by another worker...")
-    return
   fn = SCHEDULER_BY_TYPE.get(c.collector_type, None)
   if not fn:
     raise ValueError(f"Unsupported collector type: {c.type}")
-  claim_task(c)
+  await ensure_claim_task(c)
   tasks = await fn(c)
-  log_debug(f"Scheduled for collection: {c.name}.{c.interval} [{', '.join([field.name for field in c.data])}]")
+  log_debug(f"Scheduled for collection: {c.name}.{c.interval} [{', '.join([field.name for field in c.fields])}]")
   return tasks

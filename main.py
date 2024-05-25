@@ -27,8 +27,8 @@ def get_adapter_class(adapter: TsdbAdapter) -> Type[Tsdb]:
   return implementations.get(adapter.lower(), None)
 
 async def main():
-  reload(state)
-  # reload state to fetch .env config updates
+  reload(state) # reload state to fetch .env config updates parsed after argparse
+
   tsdb_class = get_adapter_class(state.adapter)
   if not tsdb_class:
     raise ValueError(f"Missing or unsupported TSDB adapter: {state.adapter}, please use one of {', '.join([a.value for a in TsdbAdapter])}")
@@ -36,9 +36,8 @@ async def main():
   # connect to cluster's TSDB
   state.tsdb.set_adapter(await tsdb_class.connect())
 
-  # load collector configurations
+# load collector configurations
   config = state.config
-
   collectors = config.scrapper + config.http_api + config.ws_api + config.evm # + config.fix_api
 
   # running collectors/workers integrity check
@@ -64,7 +63,7 @@ async def main():
   for c in collectors:
     if c in in_range:
       claims += 1
-    start_msg += f"  {c.name.ljust(30, ' ')}| {c.collector_type.ljust(12, ' ')}| {c.interval.ljust(9, ' ')}| {str(len(c.data)).rjust(2, '>')} fields "\
+    start_msg += f"  {c.name.ljust(30, ' ')}| {c.collector_type.ljust(12, ' ')}| {c.interval.ljust(9, ' ')}| {str(len(c.fields)).rjust(2, '>')} fields "\
       + f"| {'unclaimed 🟢' if c in unclaimed else 'claimed 🔴'}\t"\
       + f"| {f'picked up 🟢 ({claims}/{state.max_tasks})' if c in in_range else 'not picked up 🔴'}\n"
   log_info(start_msg)
@@ -72,23 +71,28 @@ async def main():
   # schedule all tasks
   tasks = []
   for c in in_range:
-    tasks += await schedule(c)
-  log_info(f"Starting {len(tasks)} tasks ({len(in_range)} collector crons, {len(tasks) - len(in_range)} extraneous tasks)")
+    tasks.append(schedule(c))
+
+  # schedule all at once
+  await asyncio.gather(*tasks)
+
+  # start all crons (1 per interval, no more), multi-threaded mode avoids allows for parallel IO with sync adapters (eg. tdengine)
+  cron_monitors = await state.scheduler.start(threaded=state.threaded)
 
   # run all tasks concurrently until interrupted (restarting is currently handled at the supervisor/container level)
-  if not tasks:
-    log_warn(f"No tasks scheduled, {len(tasks)} picked up by other workers. Shutting down...")
+  if not cron_monitors:
+    log_warn(f"No cron scheduled, {len(collectors)} picked up by other workers. Shutting down...")
     return
   try:
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*cron_monitors)
   except KeyboardInterrupt:
     log_info("Shutting down...")
   finally:
     # gracefully close connections to the TSDB and cache
-    if state._tsdb:
-      await state._tsdb.close()
-    if state._redis:
-      state._redis.close()
+    if state.tsdb:
+      await state.tsdb.close()
+    if state.redis:
+      state.redis.close()
 
 if __name__ == "__main__":
   argparser = argparse.ArgumentParser(description="The Collector retrieves, transforms and archives data from various sources.")

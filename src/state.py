@@ -1,32 +1,33 @@
 from asyncio import get_event_loop, Task, get_running_loop
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from os import environ as env
+import yaml
+from os import cpu_count, environ as env
 from web3 import Web3
 from multicall import constants as mc_const
-import yaml
-from redis import Redis
 from aiocron import Cron, crontab
-
-from src.utils import generate_hash, interval_to_cron, log_debug, log_error, log_info
+from redis import Redis # from redis.asyncio.client import Redis for async client
+from src.utils import generate_hash, interval_to_cron, log_debug, log_error, log_info, log_warn, submit_to_threadpool
 from src.model import Config, Tsdb, Collector, Interval, TsdbAdapter
 
 proc_id = env.get("COLLECTOR_ID", f"collector-{generate_hash(16)}")
 adapter = env.get("TSDB", "tdengine").lower()
 max_tasks = int(env.get("MAX_TASKS", 16))
 max_retries = int(env.get("MAX_RETRIES", 10))
+threaded = env.get("THREADED", "true").lower() == "true"
 retry_cooldown = int(env.get("RETRY_COOLDOWN", 5))
 env = env
 verbose: bool = True
-cron_by_id: dict[str, Cron] = {}
 
+# TODO: wrap in proxy
 _thread_pool: ThreadPoolExecutor = {}
-async def get_thread_pool() -> ThreadPoolExecutor:
+def get_thread_pool() -> ThreadPoolExecutor:
   global _thread_pool
   if not _thread_pool:
-    _thread_pool = ThreadPoolExecutor(max_workers=4)
+    _thread_pool = ThreadPoolExecutor(max_workers=cpu_count() if threaded else 2)
   return _thread_pool
 
+# TODO: wrap in proxy
 _rpcs_by_chain: dict[str|int, str] = {}
 def get_rpcs(chain_id: str | int, load_all=False) -> str:
   if load_all and not _rpcs_by_chain:
@@ -46,9 +47,10 @@ mc_const.MULTICALL3_ADDRESSES[59144] = "0xcA11bde05977b3631167028862bE2a173976CA
 mc_const.MULTICALL3_ADDRESSES[534352] = "0xcA11bde05977b3631167028862bE2a173976CA11" # scroll
 # mc_const.GAS_LIMIT = 100_000_000
 
+# TODO: wrap in proxy
 _web3_client_by_chain: dict[str | int, list[Web3]] = {}
 _next_rpc_index_by_chain: dict[str | int, list[str]] = {}
-async def get_web3_client(chain_id: str | int, rolling=True) -> Web3:
+def get_web3_client(chain_id: str | int, rolling=True) -> Web3:
   global _web3_client_by_chain
   if not chain_id in _web3_client_by_chain:
     rpcs = get_rpcs(chain_id=chain_id)
@@ -144,8 +146,68 @@ async def monitor_cron(cron: Cron):
 async def check_collectors_integrity(collectors: list[Collector]):
   log_debug("TODO: implement collectors integrity check (eg. if claimed resource, check last collection time+tsdb table schema vs resource schema...)")
 
-async def add_cron(id: str, fn: callable, args: list, interval: Interval="h1") -> Task:
-  global cron_by_id
-  cron_by_id[id] = crontab(interval_to_cron(interval), func=fn, args=args)
-  log_info(f"Added cron job {id} at interval {interval} to {proc_id}")
-  return await monitor_cron(cron_by_id[id])
+# TODO: merge with schedule.py
+class Scheduler:
+  def __init__(self):
+    self.cron_by_job_id = {}
+    self.cron_by_interval = {}
+    self.jobs_by_interval = {}
+    self.job_by_id = {}
+    # await asyncio.gather(*self._tasks)
+
+  def run_threaded(self, job_ids: list[str]):
+    jobs = [self.job_by_id[j] for j in job_ids]
+    tp = get_thread_pool()
+    ft = [submit_to_threadpool(tp, job[0], *job[1]) for job in jobs]
+    return [f.result() for f in ft] # wait for all results
+
+  async def run_async(self, job_ids: list[str]):
+    jobs = [self.job_by_id[j] for j in job_ids]
+    ft = [job[0](*job[1]) for job in jobs]
+    return await asyncio.gather(*ft)
+
+  async def add(self, id: str, fn: callable, args: list, interval: Interval="h1", start=True, threaded=False) -> Task:
+    if id in self.job_by_id:
+      raise ValueError(f"Duplicate job id: {id}")
+    self.job_by_id[id] = (fn, args)
+
+    jobs = self.jobs_by_interval.setdefault(interval, [])
+    jobs.append(id)
+
+    if not start:
+      return None
+
+    return start(self, interval, threaded)
+
+  async def start_interval(self, interval: Interval, threaded=False) -> Task:
+    if interval in self.cron_by_interval:
+      old_cron = self.cron_by_interval[interval]
+      old_cron.stop() # stop prev cron
+
+    job_ids = self.jobs_by_interval[interval]
+
+    cron = crontab(interval_to_cron(interval), func=self.run_threaded if threaded else self.run_async, args=(job_ids,))
+
+    # update the interval's jobs cron ref
+    for id in job_ids:
+      self.cron_by_job_id[id] = cron
+    self.cron_by_interval[interval] = cron
+
+    log_info(f"Proc {proc_id} starting {interval} {'threaded' if threaded else 'async'} cron with {len(job_ids)} jobs: {job_ids}")
+    return await monitor_cron(self.cron_by_job_id[id])
+
+  async def start(self, threaded=False) -> list[Task]:
+    intervals, jobs = self.jobs_by_interval.keys(), self.job_by_id.keys()
+    log_info(f"Starting {len(jobs)} jobs ({len(intervals)} crons: {list(intervals)}")
+    return [self.start_interval(i, threaded) for i in self.jobs_by_interval.keys()]
+
+  async def add_collector(self, c: Collector, fn: callable, start=True, threaded=False) -> Task:
+    return await self.add(id=c.id, fn=fn, args=(c,), interval=c.interval, start=start, threaded=threaded)
+
+  async def add_collectors(self, collectors: list[Collector], fn: callable, start=True, threaded=False) -> list[Task]:
+    intervals = set([c.interval for c in collectors])
+    added = await asyncio.gather(*[self.add_collector(c, fn, start=False, threaded=threaded) for c in collectors])
+    if start:
+      await asyncio.gather(*[self.start_interval(i, threaded) for i in intervals])
+
+scheduler = Scheduler()

@@ -67,7 +67,7 @@ class OpenTSDB:
   async def insert(self, c: Collector, table=""):
     table = table or c.name
     data_points = []
-    persistent_data = [field for field in c.data if not field.transient]
+    persistent_data = [field for field in c.fields if not field.transient]
     for field in persistent_data:
       data_points.append({
         "metric": f"{c.name}.{field.name}", # can also use "tags": {"collector": c.name}
@@ -78,7 +78,7 @@ class OpenTSDB:
 
   async def insert_many(self, c: Collector, values: list[tuple], table=""):
     data_points = []
-    persistent_data = [field for field in c.data if not field.transient]
+    persistent_data = [field for field in c.fields if not field.transient]
     for value in values:
       for i, field in enumerate(persistent_data):
         data_point = {

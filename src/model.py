@@ -45,6 +45,7 @@ class Targettable:
   method: HttpMethod = "GET"
   headers: dict[str, str] = field(default_factory=dict)
   params: list[any]|dict[str,any] = field(default_factory=list)
+  type: FieldType = "float64"
   handler: str = "" # for streams only (json ws, fix...)
   reducer: str = "" # for streams only (json ws, fix...)
   transformers: list[str] = field(default_factory=list)
@@ -55,7 +56,6 @@ class Targettable:
 
 @dataclass
 class ResourceField(Targettable):
-  type: FieldType = "float64"
   transient: bool = False
   value: Optional[any] = None
 
@@ -89,7 +89,7 @@ class ResourceField(Targettable):
 class Resource:
   name: str
   resource_type: ResourceType = "timeseries"
-  data: list[ResourceField] = field(default_factory=list)
+  fields: list[ResourceField] = field(default_factory=list)
   data_by_field: dict[str, ResourceField] = field(default_factory=dict)
 
 @dataclass
@@ -101,12 +101,13 @@ class Collector(Resource, Targettable):
 
   @classmethod
   def from_dict(cls, d: dict) -> 'Collector':
-    d["data"] = [ResourceField.from_dict(field) for field in d["data"]]
+    d["fields"] = [ResourceField.from_dict(field) for field in d["fields"]]
     r = cls(**d)
-    for field in r.data:
+    for field in r.fields:
       if not field.target: field.target = r.target
       if not field.selector: field.selector = r.selector
       if not field.params: field.params = r.params
+      if not field.type: field.type = r.type
       if isinstance(field.params, (list, tuple)):
         for i in range(len(field.params)):
           p = field.params[i]
@@ -123,7 +124,7 @@ class Collector(Resource, Targettable):
 
   def signature(self) -> str:
     return f"{self.name}-{self.resource_type}-{self.interval}-{self.collector_type}"\
-      + "-".join([field.id for field in self.data])
+      + "-".join([field.id for field in self.fields])
 
   @property
   def id(self) -> str:
@@ -141,17 +142,17 @@ class Collector(Resource, Targettable):
     return hash(self.id)
 
   def values(self):
-    return [field.value for field in self.data]
+    return [field.value for field in self.fields]
 
   def values_dict(self):
-    return {field.name: field.value for field in self.data if not field.transient}
+    return {field.name: field.value for field in self.fields if not field.transient}
 
   def load_values(self, values: list[any]):
-    for i, field in enumerate(self.data):
+    for i, field in enumerate(self.fields):
       field.value = values[i]
 
   def load_values_dict(self, values: dict[str, any]):
-    for field in self.data:
+    for field in self.fields:
       field.value = values[field.name]
 
 @dataclass

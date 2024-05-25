@@ -120,7 +120,7 @@ class TimescaleDb(Tsdb):
 
   async def create_table(self, c: Collector, name: str = "", force: bool = False):
     table = name or c.name
-    fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in c.data])
+    fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in c.fields])
     sql = f"""
     CREATE TABLE IF NOT EXISTS {table} (
       ts TIMESTAMPTZ NOT NULL,
@@ -137,7 +137,7 @@ class TimescaleDb(Tsdb):
 
   async def insert(self, c: Collector, table: str = ""):
     table = table or c.name
-    persistent_data = [field for field in c.data if not field.transient]
+    persistent_data = [field for field in c.fields if not field.transient]
     fields = ", ".join(field.name for field in persistent_data)
     values_tpl = ", ".join([f"${i+2}" for i in range(len(persistent_data))])
     insert_query = f"INSERT INTO {table} (ts, {fields}) VALUES ($1, {values_tpl})"
@@ -155,7 +155,7 @@ class TimescaleDb(Tsdb):
 
   async def insert_many(self, c: Collector, values: list[tuple], table: str = ""):
     table = table or c.name
-    persistent_fields = [field for field in c.data if not field.transient]
+    persistent_fields = [field for field in c.fields if not field.transient]
     fields = ", ".join([field.name for field in persistent_fields])
     field_count = len(persistent_fields)
     values_str = ", ".join([f"(${i*field_count+j+2})" for i in range(len(values)) for j in range(field_count)])

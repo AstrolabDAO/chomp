@@ -86,7 +86,7 @@ def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> a
           target_field = field
         else:
           # filter the resource field that match the target
-          target_field = next((f for f in c.data if f.name == target), None)
+          target_field = next((f for f in c.fields if f.name == target), None)
           if not target_field:
             raise ValueError(f"Invalid transformer target: {target}")
         # step 7: extract the series from the target field

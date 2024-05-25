@@ -86,7 +86,7 @@ class Kdb(Tsdb):
 
   async def create_table(self, c: Collector, name: str = "", force: bool = False):
     table = name or c.name
-    fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in c.data])
+    fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in c.fields])
     # Consider using kdb specific timestamp type based on documentation
     sql = f"{table}:([]ts:timestamp$(); {fields})"
     try:
@@ -98,7 +98,7 @@ class Kdb(Tsdb):
 
   async def insert(self, c: Collector, table: str = ""):
     table = table or c.name
-    values = ", ".join([f"{field.value}" for field in c.data if not field.transient])
+    values = ", ".join([f"{field.value}" for field in c.fields if not field.transient])
     insert_query = f"{table}.insert((.z.p; {values}))"
     try:
       self.conn.ks(insert_query)
@@ -109,7 +109,7 @@ class Kdb(Tsdb):
   async def insert_many(self, c: Collector, values: list[tuple], table: str = ""):
     table = table or c.name
     values_str = ", ".join([f"({', '.join(str(v) for v in value)})" for value in values])
-    insert_query = f"{table}.insert(({', '.join(['.z.p'] + [field.name for field in c.data if not field.transient])}) each {values_str})"
+    insert_query = f"{table}.insert(({', '.join(['.z.p'] + [field.name for field in c.fields if not field.transient])}) each {values_str})"
     try:
       self.conn.ks(insert_query)
     except KdbException as e:

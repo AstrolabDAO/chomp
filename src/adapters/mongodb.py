@@ -82,7 +82,7 @@ class MongoDb(Tsdb):
     table = table or c.name
     self.collection = self.get_db()[table]
     data = {"_id": c.collection_time}
-    persistent_data = {field.name: field.value for field in c.data if not field.transient}
+    persistent_data = {field.name: field.value for field in c.fields if not field.transient}
     for field in persistent_data:
       data[field.name] = field.value
     self.collection.insert_one(data)
@@ -90,7 +90,7 @@ class MongoDb(Tsdb):
   async def insert_many(self, c: Collector, values: List[tuple], table: str = ""):
     table = table or c.name
     self.collection = self.get_db()[table]
-    data = [{"_id": value[0], **{field.name: value[i + 1] for i, field in enumerate(c.data) if not field.transient}} for value in values]
+    data = [{"_id": value[0], **{field.name: value[i + 1] for i, field in enumerate(c.fields) if not field.transient}} for value in values]
     self.collection.insert_many(data)
 
   async def fetch(self, table: str, from_date: Optional[datetime], to_date: Optional[datetime], aggregation_interval: Optional[Interval], columns: List[str] = []):

@@ -1,4 +1,5 @@
 import ast
+from hashlib import md5
 import operator
 import re  # for math operators
 import numpy
@@ -22,6 +23,7 @@ BASE_NAMESPACE.update({name: getattr(module, func) for module in [numpy, pandas]
 BASE_NAMESPACE.update({t.__name__: t for t in SAFE_TYPES})
 # BASE_NAMESPACE.update({'numpy': numpy, 'pd': pandas}) # Add numpy and pd modules themselves
 SAFE_EXPR_CACHE = set()
+EVAL_CACHE = {}
 
 def safe_eval(expr, lambda_check=False, callable_check=False, **kwargs):
   """
@@ -37,6 +39,9 @@ def safe_eval(expr, lambda_check=False, callable_check=False, **kwargs):
       return expr
     raise ValueError("Expression must be a string")
 
+  id = md5(f"{expr}{lambda_check}{callable_check}{kwargs}".encode()).hexdigest()
+  if id in EVAL_CACHE:
+    return EVAL_CACHE[id]
   ns = BASE_NAMESPACE.copy()
   ns.update(kwargs)
 
@@ -70,7 +75,7 @@ def safe_eval(expr, lambda_check=False, callable_check=False, **kwargs):
 
     # cache the expression as safe for faster evals
     SAFE_EXPR_CACHE.add(expr)
-
+    EVAL_CACHE[id] = result
     return result
 
   except Exception as e:

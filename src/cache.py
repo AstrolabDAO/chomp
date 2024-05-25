@@ -10,7 +10,7 @@ NS = env.get("REDIS_NS", "collector")
 
 # clustering/synchronization
 def claim_key(c: Collector) -> str:
-  return f"{NS}:{c.id}:claimed"
+  return f"{NS}:claims:{c.id}"
 
 async def claim_task(c: Collector, until=0, key="") -> bool:
   if state.verbose:
@@ -40,7 +40,7 @@ async def free_task(c: Collector, key="") -> bool:
 
 # caching
 def cache_key(name: str) -> str:
-  return f"{NS}:{name}"
+  return f"{NS}:cache:{name}"
 
 async def cache(name: str, value: str|int|float|bool, expiry: int=YEAR_SECONDS) -> bool:
   return redis.setex(cache_key(name), round(expiry), value)

@@ -6,10 +6,9 @@ import src.state as state
 from src.model import Collector
 from src.cache import cache, pub
 
-async def store(c: Collector, table="", cache=True, publish=True) -> list:
+async def store(c: Collector, table="", publish=True) -> list:
   data = json.dumps(c.values_dict())
-  if cache:
-    await cache(c.name, data) # max expiry
+  await cache(c.name, data) # max expiry
   if publish:
     await pub(c.name, data)
   if c.resource_type != "value":
