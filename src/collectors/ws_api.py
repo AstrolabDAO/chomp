@@ -85,19 +85,23 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
     for route_hash, batch in batched_fields_by_route.items():
       url = batch[0].target
       epochs = epochs_by_route.get(url, None)
-      if not epochs[0]:
+      if not epochs or not epochs[0]:
         log_warn(f"Missing state for {c.name} {url} collection, skipping...")
         continue
       collected_batches += 1
       for field in batch:
         # reduce the state to a collectable value
-        field.value = field.reducer(epochs)
+        try:
+          field.value = field.reducer(epochs) if field.reducer else None
+        except Exception as e:
+          log_warn(f"Failed to reduce {c.name}.{field.name} for {url}, epoch attributes maye be missing: {e}")
+          continue
         if len(epochs) > 32: # keep the last 32 epochs (can be costly if many agg trades are stored in memory)
           epochs.pop()
         if state.verbose:
           log_debug(f"Reduced {c.name}.{field.name} -> {field.value}")
         # apply transformers to the field value if any
-        if field.value and field.transformers:
+        if field.transformers:
           field.value = transform(c, field)
         if state.verbose:
           log_debug(f"Transformed {c.name}.{field.name} -> {field.value}")
@@ -128,10 +132,13 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
         field.handler = default_handler_by_route[route_hash]
         batched_fields_by_route[route_hash].append(field)
         continue
-      if isinstance(field.handler, str):
+      if field.handler and isinstance(field.handler, str):
         field.handler = safe_eval(field.handler, callable_check=True) # compile the handler
-      if isinstance(field.reducer, str):
-        field.reducer = safe_eval(field.reducer, callable_check=True) # compile the reducer
+      if field.reducer and isinstance(field.reducer, str):
+        try:
+          field.reducer = safe_eval(field.reducer, callable_check=True) # compile the reducer
+        except Exception as e:
+          continue
       # batch the fields by route given we only need to subscribe once per route
       batched_fields_by_route.setdefault(route_hash, []).append(field)
       if not route_hash in default_handler_by_route and field.handler:

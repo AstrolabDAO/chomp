@@ -58,3 +58,13 @@ async def get_or_set_cache(name: str, callback: callable, expiry: int):
       return None
     await cache(key, value, expiry)
   return value
+
+async def pub(topic: str, msg: str):
+  return redis.publish(topic, msg)
+
+async def sub(topic: str, handler: callable):
+  sub = redis.pubsub()
+  sub.subscribe(topic)
+  for msg in sub.listen():
+    if msg["type"] == "message":
+      handler(msg["data"])

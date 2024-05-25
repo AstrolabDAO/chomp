@@ -4,12 +4,16 @@ import json
 
 import src.state as state
 from src.model import Collector
-from src.cache import cache
+from src.cache import cache, pub
 
-async def store(c: Collector, table="") -> list:
-  if c.resource_type == "value":
-    return await cache(c.id, json.dumps(c.values_dict())) # max expiry
-  return await state.tsdb.insert(c, table)
+async def store(c: Collector, table="", cache=True, publish=True) -> list:
+  data = json.dumps(c.values_dict())
+  if cache:
+    await cache(c.name, data) # max expiry
+  if publish:
+    await pub(c.name, data)
+  if c.resource_type != "value":
+    return await state.tsdb.insert(c, table)
 
 async def store_batch(c: Collector, values: list, from_date: datetime, to_date: Optional[datetime], aggregation_interval=None) -> dict:
   if not to_date:

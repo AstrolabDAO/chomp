@@ -39,8 +39,7 @@ async def main():
   # load collector configurations
   config = state.config
 
-  # collectors = config.scrapper + config.http_api + config.ws_api + config.evm # + config.fix_api
-  collectors = config.evm
+  collectors = config.scrapper + config.http_api + config.ws_api + config.evm # + config.fix_api
 
   # running collectors/workers integrity check
   await state.check_collectors_integrity(collectors)
@@ -69,11 +68,13 @@ async def main():
       + f"| {'unclaimed 🟢' if c in unclaimed else 'claimed 🔴'}\t"\
       + f"| {f'picked up 🟢 ({claims}/{state.max_tasks})' if c in in_range else 'not picked up 🔴'}\n"
   log_info(start_msg)
+
   # schedule all tasks
   tasks = []
   for c in in_range:
     tasks += await schedule(c)
   log_info(f"Starting {len(tasks)} tasks ({len(in_range)} collector crons, {len(tasks) - len(in_range)} extraneous tasks)")
+
   # run all tasks concurrently until interrupted (restarting is currently handled at the supervisor/container level)
   if not tasks:
     log_warn(f"No tasks scheduled, {len(tasks)} picked up by other workers. Shutting down...")
@@ -82,10 +83,8 @@ async def main():
     await asyncio.gather(*tasks)
   except KeyboardInterrupt:
     log_info("Shutting down...")
-  # except Exception as e:
-  #   log_error(f"Unexpected error: {e}")
-  # gracefully close connections to the TSDB and cache
   finally:
+    # gracefully close connections to the TSDB and cache
     if state._tsdb:
       await state._tsdb.close()
     if state._redis:

@@ -115,6 +115,9 @@ class Collector(Resource, Targettable):
               pass # remains str
             if len(p) == 66: # bytes32 (tx hash or else)
               field.params[i] = bytes.fromhex(p[2:])
+      else:
+        if "time" in field.params: # TODO: genericize to all time fields
+          field.params["time"] = round(datetime.now().timestamp())
       if not field.handler: field.handler = r.handler
     return r
 
