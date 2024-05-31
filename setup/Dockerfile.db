@@ -1,5 +1,5 @@
-# Build command: docker build -f Dockerfile.dbs -t collector-dbs .
-# Run command: docker run -d collector-dbs --name collector-dbs-1
+# Build command: docker build -f Dockerfile.db -t chomp-db .
+# Run command: docker run -d chomp-db --name chomp-db-1
 
 # 1. Prepare TDEngine binaries and libs from base debian image (transient)
 FROM tdengine/tdengine:3.2.3.0 as tdengine-base
@@ -22,7 +22,7 @@ FROM ubuntu:noble
 # NB: these are baked into the image if used in COPY commands and won't be updated by .env file at runtime
 ENV DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
-    DB_MAX_CONNECTIONS=100 \
+    DB_MAX_CONNECTIONS=50000 \
     DB_ROOT_USER=root \
     DB_ROOT_PASS=pass \
     DB_RW_USER=rw \
@@ -190,7 +190,7 @@ EOF
 EXPOSE $REDIS_PORT $TAOS_PORT
 
 # DBs start script
-COPY <<EOF /usr/local/bin/start-dbs.sh
+COPY <<EOF /usr/local/bin/start-db.sh
 #!/bin/bash
 set -e
 redis-server /etc/redis/redis.conf &
@@ -201,7 +201,7 @@ rm /tmp/init_taos.sql
 taosadapter -c /etc/taos/taosadapter.toml &
 tail -f /data/taos/log/taosd*log*
 EOF
-RUN chmod +x /usr/local/bin/start-dbs.sh
+RUN chmod +x /usr/local/bin/start-db.sh
 
 # Set entrypoint to the above script
-ENTRYPOINT ["/usr/local/bin/start-dbs.sh"]
+ENTRYPOINT ["/usr/local/bin/start-db.sh"]

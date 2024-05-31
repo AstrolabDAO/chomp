@@ -76,11 +76,8 @@ class Taos(Tsdb):
           self.conn = connect(host=self.host, port=self.port, user=self.user, password=self.password)
           log_warn(f"Database '{self.db}' does not exist on {self.host}:{self.port}, creating it now...")
           await self.create_db(self.db)
-        else:
-          log_error(f"Failed to connect to TDengine on {self.user}@{self.host}:{self.port}/{self.db}", e)
-          raise e
-      if not self.conn:
-        raise ValueError(f"Failed to connect to TDengine on {self.user}@{self.host}:{self.port}/{self.db}")
+        if not self.conn:
+          raise ValueError(f"Failed to connect to TDengine on {self.user}@{self.host}:{self.port}/{self.db}")
 
       log_info(f"Connected to TDengine on {self.host}:{self.port}/{self.db} as {self.user}")
       self.cursor = self.conn.cursor()
@@ -116,7 +113,7 @@ class Taos(Tsdb):
     log_info(f"Creating table {self.db}.{table}...")
     fields = ", ".join([f"`{field.name}` {TYPES[field.type]}" for field in c.fields])
     sql = f"""
-    CREATE TABLE IF NOT EXISTS {self.db}.{table} (
+    CREATE TABLE IF NOT EXISTS {self.db}.`{table}` (
       ts timestamp,
       {fields}
     );
@@ -134,7 +131,7 @@ class Taos(Tsdb):
     persistent_data = [field for field in c.fields if not field.transient]
     fields = "`, `".join(field.name for field in persistent_data)
     values = ", ".join([field.sql_escape() for field in persistent_data])
-    sql = f"INSERT INTO {self.db}.{table} (ts, `{fields}`) VALUES ('{c.collection_time}', {values});"
+    sql = f"INSERT INTO {self.db}.`{table}` (ts, `{fields}`) VALUES ('{c.collection_time}', {values});"
     try:
       self.cursor.execute(sql)
     except Exception as e:
@@ -151,7 +148,7 @@ class Taos(Tsdb):
     persistent_fields = [field.name for field in c.fields if not field.transient]
     fields = "`, `".join(persistent_fields)
     field_count = len(persistent_fields)
-    stmt = self.conn.statement(f"INSER INTO {self.db}.{table} VALUES(?" + ",?" * (field_count - 1) + ")")
+    stmt = self.conn.statement(f"INSER INTO {self.db}.`{table}` VALUES(?" + ",?" * (field_count - 1) + ")")
     params = new_multi_binds(field_count)
     types = [PREPARE_STMT[field.type] for field in c.fields]
     for i in fields:
@@ -185,7 +182,7 @@ class Taos(Tsdb):
 
     query = f"""
       SELECT {select_cols}
-      FROM {table}
+      FROM {self.db}.`{table}`
       {where_clause}
       INTERVAL({agg_bucket}) SLIDING({agg_bucket});
     """

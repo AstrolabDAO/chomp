@@ -2,7 +2,7 @@
 source .env.test
 
 echo "Building $DB_IMAGE image..."
-docker build -f Dockerfile.dbs -t $DB_IMAGE .
+docker build -f Dockerfile.db -t $DB_IMAGE . --no-cache
 
 # Check if the container is already running
 if docker ps -a --format '{{.Names}}' | grep -q "^${DB_TEST_CONTAINER}$"; then
@@ -17,7 +17,7 @@ fi
 echo "Starting $DB_TEST_CONTAINER container..."
 docker run -d --env-file .env.test --network botnet --name $DB_TEST_CONTAINER -p $REDIS_PORT:$REDIS_PORT -p $TAOS_PORT:$TAOS_PORT -p $TAOS_HTTP_PORT:$TAOS_HTTP_PORT $DB_IMAGE
 
-# Wait 5s for the dbs to start
+# Wait 5s for the db to start
 sleep 5
 
 # Test redis connection if redis-cli is locally installed, else warn user and print test command

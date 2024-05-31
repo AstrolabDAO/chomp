@@ -1,30 +1,22 @@
-from asyncio import get_event_loop, Task, get_running_loop
-import asyncio
+from asyncio import get_event_loop, Task, get_running_loop, gather
 from concurrent.futures import ThreadPoolExecutor
-import yaml
+import yamale
 from os import cpu_count, environ as env
 from web3 import Web3
 from multicall import constants as mc_const
 from aiocron import Cron, crontab
-from redis import Redis # from redis.asyncio.client import Redis for async client
-from src.utils import generate_hash, interval_to_cron, log_debug, log_error, log_info, log_warn, submit_to_threadpool
+from redis.asyncio import Redis, ConnectionPool # from redis.client import Redis for async client
+from src.utils import interval_to_cron, log_debug, log_error, log_info, log_warn, submit_to_threadpool
 from src.model import Config, Tsdb, Collector, Interval, TsdbAdapter
 
-proc_id = env.get("COLLECTOR_ID", f"collector-{generate_hash(16)}")
-adapter = env.get("TSDB", "tdengine").lower()
-max_tasks = int(env.get("MAX_TASKS", 16))
-max_retries = int(env.get("MAX_RETRIES", 10))
-threaded = env.get("THREADED", "true").lower() == "true"
-retry_cooldown = int(env.get("RETRY_COOLDOWN", 5))
-env = env
-verbose: bool = True
+args: any = None
 
 # TODO: wrap in proxy
 _thread_pool: ThreadPoolExecutor = {}
 def get_thread_pool() -> ThreadPoolExecutor:
   global _thread_pool
   if not _thread_pool:
-    _thread_pool = ThreadPoolExecutor(max_workers=cpu_count() if threaded else 2)
+    _thread_pool = ThreadPoolExecutor(max_workers=cpu_count() if args.threaded else 2)
   return _thread_pool
 
 # TODO: wrap in proxy
@@ -45,7 +37,7 @@ mc_const.MULTICALL3_ADDRESSES[238] = "0xcA11bde05977b3631167028862bE2a173976CA11
 mc_const.MULTICALL3_ADDRESSES[5000] = "0xcA11bde05977b3631167028862bE2a173976CA11" # mantle
 mc_const.MULTICALL3_ADDRESSES[59144] = "0xcA11bde05977b3631167028862bE2a173976CA11" # linea
 mc_const.MULTICALL3_ADDRESSES[534352] = "0xcA11bde05977b3631167028862bE2a173976CA11" # scroll
-# mc_const.GAS_LIMIT = 100_000_000
+mc_const.GAS_LIMIT = 5_000_000
 
 # TODO: wrap in proxy
 _web3_client_by_chain: dict[str | int, list[Web3]] = {}
@@ -80,7 +72,7 @@ class TsdbProxy:
   @property
   def tsdb(self) -> Tsdb:
     if not self._tsdb:
-      raise ValueError("No TSDB Adapter found")
+      raise ValueError("No TSDB_ADAPTER Adapter found")
     # get_loop().run_until_complete(self._tsdb.ensure_connected())
     return self._tsdb
 
@@ -94,19 +86,31 @@ tsdb = TsdbProxy()
 
 class RedisProxy:
   def __init__(self):
+    self._pool = None
     self._redis = None
 
   @property
   def redis(self) -> Redis:
-    if not self._redis or not self._redis.ping():
-      self._redis = Redis(
-        host=env.get("REDIS_HOST", "localhost"),
-        port=int(env.get("REDIS_PORT", 6379)),
-        username=env.get("DB_RW_USER", "rw"),
-        password=env.get("DB_RW_PASS", "pass"),
-        db=int(env.get("REDIS_DB", 0))
-      )
+    if not self._redis:
+      if not self._pool:
+        self._pool = ConnectionPool(
+          host=env.get("REDIS_HOST", "localhost"),
+          port=int(env.get("REDIS_PORT", 6379)),
+          username=env.get("DB_RW_USER", "rw"),
+          password=env.get("DB_RW_PASS", "pass"),
+          db=int(env.get("REDIS_DB", 0)),
+          max_connections=int(env.get("REDIS_MAX_CONNECTIONS", 2 ** 16)),
+        )
+      self._redis = Redis(connection_pool=self._pool)
     return self._redis
+
+  async def close(self):
+    if self._redis:
+      await self._redis.close()
+      self._redis = None
+    if self._pool:
+      await self._pool.disconnect()
+      self._pool = None
 
   def __getattr__(self, name):
     return getattr(self.redis, name)
@@ -119,14 +123,24 @@ class ConfigProxy:
 
   @staticmethod
   def load_config(path: str) -> Config:
-    with open(path, 'r') as f:
-      config_data = yaml.safe_load(f)
-    return Config.from_dict(config_data)
+    schema = yamale.make_schema("./src/config-schema.yml")
+    config_data = yamale.make_data(path)
+    try:
+      validation = yamale.validate(schema, yamale.make_data(path))
+    except yamale.YamaleError as e:
+      msg = ""
+      for result in e.results:
+        msg += f"Error validating {result.data} with schema {result.schema}\n"
+        for error in result.errors:
+          msg += f" - {error}\n"
+      log_error(msg)
+      exit(1)
+    return Config.from_dict(config_data[0][0])
 
   @property
   def config(self) -> Config:
     if not self._config:
-      self._config = self.load_config(env.get("CONFIG_PATH", "collectors.yml"))
+      self._config = self.load_config(args.config_path)
     return self._config
 
   def __getattr__(self, name):
@@ -153,7 +167,6 @@ class Scheduler:
     self.cron_by_interval = {}
     self.jobs_by_interval = {}
     self.job_by_id = {}
-    # await asyncio.gather(*self._tasks)
 
   def run_threaded(self, job_ids: list[str]):
     jobs = [self.job_by_id[j] for j in job_ids]
@@ -164,7 +177,7 @@ class Scheduler:
   async def run_async(self, job_ids: list[str]):
     jobs = [self.job_by_id[j] for j in job_ids]
     ft = [job[0](*job[1]) for job in jobs]
-    return await asyncio.gather(*ft)
+    return await gather(*ft)
 
   async def add(self, id: str, fn: callable, args: list, interval: Interval="h1", start=True, threaded=False) -> Task:
     if id in self.job_by_id:
@@ -186,19 +199,20 @@ class Scheduler:
 
     job_ids = self.jobs_by_interval[interval]
 
-    cron = crontab(interval_to_cron(interval), func=self.run_threaded if threaded else self.run_async, args=(job_ids,))
+    # cron = crontab(interval_to_cron(interval), func=self.run_threaded if threaded else self.run_async, args=(job_ids,))
+    cron = crontab(interval_to_cron(interval), func=self.run_async, args=(job_ids,))
 
     # update the interval's jobs cron ref
     for id in job_ids:
       self.cron_by_job_id[id] = cron
     self.cron_by_interval[interval] = cron
 
-    log_info(f"Proc {proc_id} starting {interval} {'threaded' if threaded else 'async'} cron with {len(job_ids)} jobs: {job_ids}")
+    log_info(f"Proc {args.proc_id} starting {interval} {'threaded' if threaded else 'async'} cron with {len(job_ids)} jobs: {job_ids}")
     return await monitor_cron(self.cron_by_job_id[id])
 
   async def start(self, threaded=False) -> list[Task]:
     intervals, jobs = self.jobs_by_interval.keys(), self.job_by_id.keys()
-    log_info(f"Starting {len(jobs)} jobs ({len(intervals)} crons: {list(intervals)}")
+    log_info(f"Starting {len(jobs)} jobs ({len(intervals)} crons: {list(intervals)})")
     return [self.start_interval(i, threaded) for i in self.jobs_by_interval.keys()]
 
   async def add_collector(self, c: Collector, fn: callable, start=True, threaded=False) -> Task:
@@ -206,8 +220,8 @@ class Scheduler:
 
   async def add_collectors(self, collectors: list[Collector], fn: callable, start=True, threaded=False) -> list[Task]:
     intervals = set([c.interval for c in collectors])
-    added = await asyncio.gather(*[self.add_collector(c, fn, start=False, threaded=threaded) for c in collectors])
+    added = await gather(*[self.add_collector(c, fn, start=False, threaded=threaded) for c in collectors])
     if start:
-      await asyncio.gather(*[self.start_interval(i, threaded) for i in intervals])
+      await gather(*[self.start_interval(i, threaded) for i in intervals])
 
 scheduler = Scheduler()

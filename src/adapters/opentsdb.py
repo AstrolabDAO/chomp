@@ -3,12 +3,12 @@
 from os import environ as env
 from datetime import datetime
 from typing import Optional
-from opentsdb.client import OpenTSDBClient
+from opentsdb.client import OpenTSDB_ADAPTERClient
 from opentsdb.query import Query
 
 from src.model import Collector, Interval
 
-INTERVAL_TO_OPENTSDB: dict[Interval, str] = {
+INTERVAL_TO_OPENTSDB_ADAPTER: dict[Interval, str] = {
   "m1": "1m",
   "m2": "2m",
   "m5": "5m",
@@ -30,18 +30,18 @@ INTERVAL_TO_OPENTSDB: dict[Interval, str] = {
 }
 
 def interval_to_opentsdb(interval: Optional[str]) -> str:
-  return INTERVAL_TO_OPENTSDB.get(interval, None)
+  return INTERVAL_TO_OPENTSDB_ADAPTER.get(interval, None)
 
-class OpenTSDB:
-  client: OpenTSDBClient
+class OpenTSDB_ADAPTER:
+  client: OpenTSDB_ADAPTERClient
 
   @classmethod
   async def connect(cls,
-    host=env.get("OPENTSDB_HOST", "localhost"),
-    port=int(env.get("OPENTSDB_PORT", 4242)),
+    host=env.get("OPENTSDB_ADAPTER_HOST", "localhost"),
+    port=int(env.get("OPENTSDB_ADAPTER_PORT", 4242)),
     user=env.get("DB_RW_USER", "rw"),
     password=env.get("DB_RW_PASS", "pass")
-  ) -> "OpenTSDB":
+  ) -> "OpenTSDB_ADAPTER":
     self = cls(host, port, user, password)
     await self.ensure_connected()
     return self
@@ -51,18 +51,18 @@ class OpenTSDB:
 
   async def ensure_connected(self):
     if not self.client:
-      self.client = OpenTSDBClient(self.host, self.port)
+      self.client = OpenTSDB_ADAPTERClient(self.host, self.port)
     if not self.client:
-      raise ValueError(f"Failed to connect to OpenTSDB on {self.host}:{self.port}")
+      raise ValueError(f"Failed to connect to OpenTSDB_ADAPTER on {self.host}:{self.port}")
 
   async def create_db(self, name: str, options={}, force=False):
-    pass # No-op in OpenTSDB
+    pass # No-op in OpenTSDB_ADAPTER
 
   async def use_db(self, name: str):
-    pass # No-op in OpenTSDB
+    pass # No-op in OpenTSDB_ADAPTER
 
   async def create_table(self, c: Collector, name=""):
-    pass # No-op in OpenTSDB
+    pass # No-op in OpenTSDB_ADAPTER
 
   async def insert(self, c: Collector, table=""):
     table = table or c.name
@@ -108,4 +108,4 @@ class OpenTSDB:
     return result
 
   async def commit(self):
-    pass # No-op in OpenTSDB
+    pass # No-op in OpenTSDB_ADAPTER

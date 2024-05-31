@@ -1,0 +1,75 @@
+evm_caller:
+  - name: ChainlinkFeeds
+    interval: s30
+    resource_type: timeseries
+    type: float64
+    fields:
+      - name: USDCUSD_decimals
+        type: uint8
+        target: "137:0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7"
+        selector: decimals()(uint8)
+        transient: true # not stored
+      - name: USDCUSD
+        target: "137:0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7"
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
+        transformers: ["{self}[1] / 10 ** {USDCUSD_decimals}", "round6"]
+      - name: BTCUSD_decimals
+        type: uint8
+        target: "137:0xc907E116054Ad103354f2D350FD2514433D57F6f"
+        selector: decimals()(uint8)
+        transient: true
+      - name: BTCUSDC
+        target: "137:0xc907E116054Ad103354f2D350FD2514433D57F6f"
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80)) # function signature
+        transformers: ["({self}[1] / 10 ** {BTCUSD_decimals}) * {USDCUSD}", "round2"]
+      - name: ETHUSD_decimals
+        type: uint8
+        target: "137:0xF9680D99D6C9589e2a93a78A04A279e509205945"
+        selector: decimals()(uint8)
+        transient: true
+      - name: ETHUSDC
+        target: "137:0xF9680D99D6C9589e2a93a78A04A279e509205945"
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
+        transformers: ["({self}[1] / 10 ** {ETHUSD_decimals}) * {USDCUSD}", "round2"]
+      - name: PEPEUSD_decimals
+        type: uint8
+        target: "42161:0x02DEd5a7EDDA750E3Eb240b54437a54d57b74dBE"
+        selector: decimals()(uint8)
+        transient: true
+      - name: PEPEUSDC
+        target: "42161:0x02DEd5a7EDDA750E3Eb240b54437a54d57b74dBE"
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
+        transformers: ["({self}[1] / 10 ** {PEPEUSD_decimals}) * {USDCUSD}", "round2"]
+      - name: SHIB_decimals
+        type: uint8
+        target: "137:0x3710abeb1A0Fc7C2EC59C26c8DAA7a448ff6125A"
+        selector: decimals()(uint8)
+        transient: true
+      - name: SHIB
+        target: "137:0x3710abeb1A0Fc7C2EC59C26c8DAA7a448ff6125A"
+        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
+        transformers: ["({self}[1] / 10 ** {PEPEUSD_decimals}) * {USDCUSD}", "round2"]
+
+  - name: PythArbFeeds # https://docs.pyth.network/price-feeds/contract-addresses/evm
+    interval: s30
+    resource_type: timeseries
+    target: "42161:0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"
+    selector: getPriceUnsafe(bytes32)((int64,uint64,int32,uint256))
+    type: float64
+    fields:
+      - name: USDCUSD
+        params: ["0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a"]
+        transformers: ["{self}[0] * 10 ** {self}[2]", "round6"] # price * 10^exponent
+        transient: true
+      - name: BTCUSDC
+        params: ["0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"]
+        transformers: ["({self}[0] * 10 ** {self}[2]) * {USDCUSD}", "round2"]
+      - name: ETHUSDC
+        params: ["0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"]
+        transformers: ["({self}[0] * 10 ** {self}[2]) * {USDCUSD}", "round2"]
+      - name: PEPEUSDC
+        params: ["0xd69731a2e74ac1ce884fc3890f7ee324b6deb66147055249568869ed700882e4"]
+        transformers: ["({self}[0] * 10 ** {self}[2]) * {USDCUSD}", "round2"]
+      - name: SHIBUSDC
+        params: ["0xf0d57deca57b3da2fe63a493f4c25925fdfd8edf834b20f93e1f84dbd1504d4a"]
+        transformers: ["({self}[0] * 10 ** {self}[2]) * {USDCUSD}", "round2"]

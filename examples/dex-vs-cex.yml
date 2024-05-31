@@ -1,34 +1,9 @@
-# collectors.yml
-
-# html scrappers
 scrapper: []
-  # - name: TakeIchiConvoyStats
-  #   interval: Y1 # see model.py for available intervals
-  #   resource_type: value # value (inplace document), series, timeseries
-  #   target: https://en.wikipedia.org/wiki/Take_Ichi_convoy
-  #   fields:
-  #     - name: Dates
-  #       type: string
-  #       selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[4]/td/table/tbody/tr[1]/td # css selector or xpath
-  #     - name: AmericanTroups
-  #       type: string
-  #       selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[10]/td[1]
-  #     - name: JapaneseTroups
-  #       type: string
-  #       selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[10]/td[2]
-  #     - name: AmericanCasualties
-  #       type: string
-  #       selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[12]/td[1]
-  #     - name: JapaneseCasualties
-  #       type: string
-  #       selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[12]/td[2]
-
-# rest api collectors
 http_api:
   - name: CoingeckoFeeds
     interval: s30
     resource_type: timeseries
-    target: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,staked-ether,binancecoin,avalanche-2,wrapped-bitcoin,ripple,solana,the-open-network,polkadot,cardano,bitcoin-cash,matic-network,aptos,first-digital-usd,cosmos,mantle,optimism,arbitrum,sui,arweave,monero,ethena-usde,fantom,celestia,thorchain,coredaoorg,sei-network,usd-coin,tether,frax,dai,manta-network,celo,dogecoin,pepe,shiba-inu,dogwifcoin&vs_currencies=usd
+    target: https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,binancecoin,avalanche-2,solana,the-open-network,dogecoin,pepe,shiba-inu,dogwifcoin,polkadot,cardano,matic-network,aptos,mantle,optimism,arbitrum,sui,fantom,sei-network,usd-coin,tether,frax,dai&vs_currencies=usd
     type: float64
     fields:
       - name: USDCUSD
@@ -194,11 +169,11 @@ http_api:
         transformers: ["1 / ((float({self}['asks'][0][0]) + float({self}['bids'][0][0])) / 2)", "round6"]
         transient: true
       - name: BTCUSDC # BTCUSDT * USDTUSDC
-        target: https://api.kraken.com/0/public/Depth?pair=XXBTZUSD
+        target: https://api.kraken.com/0/public/Depth?pair=XXBTZUSD&count=5
         selector: .result.XXBTZUSD
         transformers: ["((float({self}['asks'][0][0]) + float({self}['bids'][0][0])) / 2) * {USDUSDC}", "round2"]
       - name: ETHUSDC
-        target: https://api.kraken.com/0/public/Depth?pair=ETHUSD # XETHZUSD
+        target: https://api.kraken.com/0/public/Depth?pair=XETHZUSD&count=5 # XETHZUSD
         selector: .result.XETHZUSD
         transformers: ["((float({self}['asks'][0][0]) + float({self}['bids'][0][0])) / 2) * {USDUSDC}", "round2"]
 
@@ -476,67 +451,7 @@ ws_api:
   #       transformers: ["{self} * {USDTUSDC}", "round2"]
 
 fix_api: []
-
-# evm collectors
-evm:
-
-  # oracle prices
-  - name: ChainlinkPolyFeeds
-    interval: s10
-    resource_type: timeseries
-    type: float64
-    fields:
-      - name: USDCUSD_decimals
-        type: uint8
-        target: "137:0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7" # chainId:address
-        selector: decimals()(uint8)
-        transient: true # not stored
-      - name: USDCUSD
-        target: "137:0xfE4A8cc5b5B2366C1B58Bea3858e81843581b2F7" # chainId:address
-        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
-        transformers: ["{self}[1] / 10 ** {USDCUSD_decimals}", "round6"]
-        params: []
-      - name: BTCUSD_decimals
-        type: uint8
-        target: "137:0xc907E116054Ad103354f2D350FD2514433D57F6f"
-        selector: decimals()(uint8)
-        transient: true
-      - name: BTCUSDC
-        target: "137:0xc907E116054Ad103354f2D350FD2514433D57F6f" # chainId:address
-        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80)) # function signature
-        transformers: ["({self}[1] / 10 ** {BTCUSD_decimals}) * {USDCUSD}", "round2"]
-        params: []
-      - name: ETHUSD_decimals
-        type: uint8
-        target: "137:0xF9680D99D6C9589e2a93a78A04A279e509205945"
-        selector: decimals()(uint8)
-        transient: true
-      - name: ETHUSDC
-        target: "137:0xF9680D99D6C9589e2a93a78A04A279e509205945"
-        selector: latestRoundData()((uint80,int256,uint256,uint256,uint80))
-        transformers: ["({self}[1] / 10 ** {ETHUSD_decimals}) * {USDCUSD}", "round2"]
-        params: []
-      # - name: BTCUSDC_median
-      #   type: float64
-      #   transformers: ["{EvmValue1::median('W1')}"] # no need for selector if the value is computed
-
-  - name: PythArbFeeds # https://docs.pyth.network/price-feeds/contract-addresses/evm
-    interval: s10
-    resource_type: timeseries
-    target: "42161:0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"
-    selector: getPriceUnsafe(bytes32)((int64,uint64,int32,uint256))
-    type: float64
-    fields:
-      - name: USDCUSD
-        params: ["0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a"]
-        transformers: ["{self}[0] * 10 ** {self}[2]", "round6"] # price * 10^exponent
-        transient: true
-      - name: BTCUSDC
-        params: ["0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"]
-        transformers: ["({self}[0] * 10 ** {self}[2]) * {USDCUSD}", "round2"]
-      - name: ETHUSDC
-        params: ["0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"]
-        transformers: ["({self}[0] * 10 ** {self}[2]) * {USDCUSD}", "round2"]
+evm_caller:
 
   # ethereum l1 prices
   - name: UniswapEthFeeds
@@ -736,10 +651,15 @@ evm:
   #       selector: slot0()((uint160,int24,uint16,uint16,uint16,uint8,bool))
   #       transformers: ["(({self}[0] ** 2 / 2 ** 192) / 1e10) * {ETHUSDC}", "round2"]
 
-# other collectors
-solana: []
-ton: []
-cosmos: []
-sui: []
-sei: []
-aptos: []
+evm_logger: []
+# non-evm chain collectors
+solana_caller: []
+solana_logger: []
+sui_caller: []
+sui_logger: []
+aptos_caller: []
+aptos_logger: []
+ton_caller: []
+ton_logger: []
+cosmos_caller: []
+cosmos_logger: []

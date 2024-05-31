@@ -4,11 +4,13 @@
 *.bak
 *.pyc
 *.tmp
+*dump.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+.pdm-build
 
 # C extensions
 *.so

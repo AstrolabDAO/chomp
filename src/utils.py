@@ -6,10 +6,13 @@ from typing import Coroutine, Literal, Optional
 from dateutil.relativedelta import relativedelta
 from os import environ as env, urandom
 from hashlib import md5, sha256
+from argparse import ArgumentParser
+
+from dotenv import find_dotenv, load_dotenv
+from web3 import Web3
 
 YEAR_SECONDS = round(3.154e+7)
 LOGFILE = env.get("LOGFILE", "out.log")
-
 LogLevel = Literal["INFO", "ERROR", "DEBUG", "WARN"]
 
 def log(level: LogLevel="INFO", *args):
@@ -24,31 +27,77 @@ def log_info(*args): log("INFO", *args); return True
 def log_error(*args): log("ERROR", *args); return False
 def log_warn(*args): log("WARN", *args); return False
 
+def is_bool(value: any) -> bool:
+  return str(value).lower() in ["true", "false", "yes", "no", "1", "0"]
+
+def to_bool(value: str) -> bool:
+  return value.lower() in ["true", "yes", "1"]
+
+class ArgParser(ArgumentParser):
+
+  info: dict[str, tuple] = {}
+  parsed: any = None
+
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self.info = {}  # Internal map for storing argument info
+    self.parsed: any = None
+
+  def add_argument(self, *args, **kwargs):
+    action = super().add_argument(*args, **kwargs)
+    if not action.type:
+      action.type = bool if is_bool(action.const or action.default) else (type(action.default) or str)
+    self.info[action.dest] = (action.type, action.default) # arg type and default value
+    return action
+
+  def get_info(self, arg_name):
+    return self.info.get(arg_name)
+
+  def parse_args(self, *args, **kwargs) -> any:
+    self.parsed = super().parse_args(*args, **kwargs)
+    return self.parsed
+
+  def load_env(self, path: str=None) -> any:
+    if not self.parsed:
+      self.parse_args()
+    load_dotenv(find_dotenv(path or self.parsed.env))
+    for k, v in vars(self.parsed).items():
+      arg_type, arg_default = self.get_info(k)
+      is_default = arg_default == v
+      env_val = env.get(k.upper())
+      if env_val and is_default:
+        selected = arg_type(env_val) if arg_type != bool else env_val.lower() == "true"
+      else:
+        selected = v
+        env[k.upper()] = str(v) # inject into env for naive access
+      setattr(self.parsed, k, selected)
+    return self.parsed
+
 CRON_BY_TF: dict[str, tuple] = {
-  "s2": "* * * * * */2",  # every 2 seconds
-  "s5": "* * * * * */5",  # every 5 seconds
-  "s10": "* * * * * */10",  # every 10 seconds
-  "s15": "* * * * * */15",  # every 15 seconds
-  "s20": "* * * * * */20",  # every 20 seconds
-  "s30": "* * * * * */30",  # every 30 seconds
-  "m1": "*/1 * * * *",  # every minute
-  "m2": "*/2 * * * *",  # every 2 minutes
-  "m5": "*/5 * * * *",  # every 5 minutes
-  "m10": "*/10 * * * *",  # every 10 minutes
-  "m15": "*/15 * * * *",  # every 15 minutes
-  "m30": "*/30 * * * *",  # every 30 minutes
-  "h1": "0 * * * *",  # every hour
-  "h2": "0 */2 * * *",  # every 2 hours
-  "h4": "0 */4 * * *",  # every 4 hours
-  "h6": "0 */6 * * *",  # every 6 hours
-  "h8": "0 */8 * * *",  # every 8 hours
-  "h12": "0 */12 * * *",  # every 12 hours
-  "D1": "0 0 */1 * *",  # every day
+  "s2": "* * * * * */2", # every 2 seconds
+  "s5": "* * * * * */5", # every 5 seconds
+  "s10": "* * * * * */10", # every 10 seconds
+  "s15": "* * * * * */15", # every 15 seconds
+  "s20": "* * * * * */20", # every 20 seconds
+  "s30": "* * * * * */30", # every 30 seconds
+  "m1": "*/1 * * * *", # every minute
+  "m2": "*/2 * * * *", # every 2 minutes
+  "m5": "*/5 * * * *", # every 5 minutes
+  "m10": "*/10 * * * *", # every 10 minutes
+  "m15": "*/15 * * * *", # every 15 minutes
+  "m30": "*/30 * * * *", # every 30 minutes
+  "h1": "0 * * * *", # every hour
+  "h2": "0 */2 * * *", # every 2 hours
+  "h4": "0 */4 * * *", # every 4 hours
+  "h6": "0 */6 * * *", # every 6 hours
+  "h8": "0 */8 * * *", # every 8 hours
+  "h12": "0 */12 * * *", # every 12 hours
+  "D1": "0 0 */1 * *", # every day
   "D2": "0 0 */2 * *",  # approx. every 2 days (odd days)
   "D3": "0 0 */3 * *",  # approx. every 3 days (multiple of 3)
-  "W1": "0 0 * * 0",  # every week (sunday at midnight)
-  "M1": "0 0 1 */1 *",  # every month (1st of the month)
-  "Y1": "0 0 1 1 *",  # every year (Jan 1)
+  "W1": "0 0 * * 0", # every week (sunday at midnight)
+  "M1": "0 0 1 */1 *", # every month (1st of the month)
+  "Y1": "0 0 1 1 *", # every year (Jan 1)
 }
 
 SEC_BY_TF: dict[str, int] = {
@@ -167,7 +216,7 @@ def shift_date(timeframe, date: Optional[datetime], backwards=False):
     date = datetime.now(UTC)
   return date + interval_to_delta(timeframe, backwards)
 
-def select_from_dict(selector: Optional[str], data: dict) -> any:
+def select_nested(selector: Optional[str], data: dict) -> any:
 
   # invalid selectors
   if selector and not isinstance(selector, str):
@@ -209,14 +258,23 @@ def generate_hash(derive_from: Optional[str], length=32) -> str:
   return hash_fn((str(derive_from) + urandom(64).hex()).encode()).hexdigest()[:length]
 
 def run_async_in_thread(fn: Coroutine):
-    loop = new_event_loop()
-    try:
-      return loop.run_until_complete(fn)
-    except Exception as e:
-      log_error(f"Failed to run async function in thread: {e}")
-      loop.close()
+  loop = new_event_loop()
+  try:
+    return loop.run_until_complete(fn)
+  except Exception as e:
+    log_error(f"Failed to run async function in thread: {e}")
+    loop.close()
 
 def submit_to_threadpool(executor, fn, *args, **kwargs):
-    if iscoroutinefunction(fn):
-        return executor.submit(run_async_in_thread, fn(*args, **kwargs))
-    return executor.submit(fn, *args, **kwargs)
+  if iscoroutinefunction(fn):
+      return executor.submit(run_async_in_thread, fn(*args, **kwargs))
+  return executor.submit(fn, *args, **kwargs)
+
+def split_chain_addr(target: str) -> tuple[str|int, str]:
+  tokens = target.split(":")
+  n = len(tokens)
+  if n == 1:
+    tokens = ["1", tokens[0]] # default to ethereum L1
+  if n > 2:
+    raise ValueError(f"Invalid target format for evm: {target}, expected chain_id:address")
+  return int(tokens[0]), Web3.to_checksum_address(tokens[1])

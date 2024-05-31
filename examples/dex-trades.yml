@@ -1,0 +1,32 @@
+scrapper: []
+http_api: []
+ws_api: []
+fix_api: []
+evm_caller: []
+
+evm_logger:
+  - name: UniswapOpSwaps.ETHUSDC
+    target: "10:0x85149247691df622eaf1a8bd0cafd40bc45154a9" # WETH/USDC pool
+    selector: Swap(indexed address,indexed address,int256,int256,uint160,uint128,int24) # event signature with indexed fields
+    resource_type: timeseries
+    interval: s20 # events polling interval (ignored if `PERPETUAL_INDEXING` == true, streaming events IRT on compatible RPCs)
+    fields:
+      - { name: sender, type: string, transformers: ["{self}[0]"] }
+      - { name: recipient, type: string, transformers: ["{self}[1]"] }
+      - { name: spent, type: float64, transformers: ["{self}[2] / 1e18", "round6"] }
+      - { name: received, type: float64, transformers: ["{self}[3] / 1e6", "round6"] }
+      - { name: price, type: float64, transformers: ["({self}[4] ** 2 / 2 ** 192) * 1e12", "round2"] }
+      # - { name: liquidity, type: float64, transformers: ["{self}[5]"] }
+      # - { name: tick, type: int16, transformers: ["{self}[6]"] }
+
+# non-evm chain collectors
+solana_caller: []
+solana_logger: []
+sui_caller: []
+sui_logger: []
+aptos_caller: []
+aptos_logger: []
+ton_caller: []
+ton_logger: []
+cosmos_caller: []
+cosmos_logger: []

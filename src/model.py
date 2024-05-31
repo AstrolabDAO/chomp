@@ -3,9 +3,9 @@ from datetime import datetime
 from hashlib import md5
 from aiocron import Cron
 from typing import Literal, Optional, Type
-
-from utils import extract_time_unit, interval_to_seconds
 from web3 import Web3
+
+from src.utils import extract_time_unit, interval_to_seconds, split_chain_addr
 
 ResourceType = Literal[
   "value", # e.g., inplace document (json/text), binary, int, float, date, string...
@@ -15,7 +15,11 @@ ResourceType = Literal[
 
 CollectorType = Literal[
   "scrapper", "http_api", "ws_api", "fix_api", # web2
-  "evm", "cosmos", "solana", "sui", "ton" # web3
+  "evm_caller", "evm_logger", # web3
+  "solana_caller", "solana_logger",
+  "sui_caller", "sui_logger",
+  "aptos_caller", "aptos_logger",
+  "ton_caller", "ton_logger",
 ]
 
 TsdbAdapter = Literal["tdengine", "timescale", "influx", "kdb"]
@@ -23,6 +27,7 @@ TsdbAdapter = Literal["tdengine", "timescale", "influx", "kdb"]
 # below are based on ISO 8601 capitalization (cf. https://en.wikipedia.org/wiki/ISO_8601)
 TimeUnit = Literal["ns", "us", "ms", "s", "m", "h", "D", "W", "M", "Y"]
 Interval = Literal[
+  "s2", "s5", "s10", "s15", "s20", "s30", # sub minute
   "m1", "m2", "m5", "m10", "m15", "m30", # sub hour
   "h1", "h2", "h4", "h6", "h8", "h12", # sub day
   "D1", "D2", "D3", # sub week
@@ -74,13 +79,7 @@ class ResourceField(Targettable):
     return f"'{self.value}'" if self.type in ["string", "binary", "varbinary"] else str(self.value)
 
   def chain_addr(self) -> tuple[str|int, str]:
-    tokens = self.target.split(":")
-    n = len(tokens)
-    if n == 1:
-      tokens = ["1", tokens[0]] # default to ethereum L1
-    if n > 2:
-      raise ValueError(f"Invalid target format for evm: {self.target}, expected chain_id:address")
-    return [int(tokens[0]), Web3.to_checksum_address(tokens[1])]
+    return split_chain_addr(self.target)
 
   def __hash__(self) -> int:
     return hash(self.id)
@@ -95,7 +94,7 @@ class Resource:
 @dataclass
 class Collector(Resource, Targettable):
   interval: Interval = "h1"
-  collector_type: CollectorType = "evm"
+  collector_type: CollectorType = "evm_caller"
   collection_time: datetime = None
   cron: Optional[Cron] = None
 
@@ -155,18 +154,17 @@ class Collector(Resource, Targettable):
     for field in self.fields:
       field.value = values[field.name]
 
-@dataclass
-class Config:
-  scrapper: list[Collector] = field(default_factory=list)
-  http_api: list[Collector] = field(default_factory=list)
-  ws_api: list[Collector] = field(default_factory=list)
-  fix_api: list[Collector] = field(default_factory=list)
-  evm: list[Collector] = field(default_factory=list)
-  solana: list[Collector] = field(default_factory=list)
-  cosmos: list[Collector] = field(default_factory=list)
-  sui: list[Collector] = field(default_factory=list)
-  ton: list[Collector] = field(default_factory=list)
+class ConfigMeta(type):
+  def __new__(cls, name, bases, dct):
+    # iterate over all CollectorType
+    for collector_type in CollectorType.__args__:
+      attr_name = collector_type.lower()
+      dct[attr_name] = field(default_factory=list) # add field default to the class
+      dct.setdefault('__annotations__', {})[attr_name] = list[Collector] # add type hint to the class
+    return super().__new__(cls, name, bases, dct)
 
+@dataclass
+class Config(metaclass=ConfigMeta):
   @classmethod
   def from_dict(cls, data: dict) -> 'Config':
     config_dict = {}

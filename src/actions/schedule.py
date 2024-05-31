@@ -11,7 +11,8 @@ SCHEDULER_BY_TYPE: dict[CollectorType, callable] = {
   "scrapper": collectors.scrapper.schedule,
   "http_api": collectors.http_api.schedule,
   "ws_api": collectors.ws_api.schedule,
-  "evm": collectors.evm.schedule,
+  "evm_caller": collectors.evm_caller.schedule,
+  "evm_logger": collectors.evm_logger.schedule,
   # "fix_api": collectors.fix_api.schedule,
 }
 

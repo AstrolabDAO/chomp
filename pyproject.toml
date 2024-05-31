@@ -1,19 +1,23 @@
 [project]
-name = "the-collector"
+name = "chomp"
 version = "0.1.0"
-description = "Lightweight data retriever and archiver, start collecting web2/3 data in minutes"
+description = "Lightweight, multimodal ingester, start collecting web2/3 data in minutes"
 authors = [
     # {name = "JakeTheSlug", email = "jake@astrolab.fi"},
 ]
 dependencies = [
-    "pyyaml>=6.0.1",
-    "python-dotenv>=1.0.1",
-    "aiocron>=1.8",
     "redis>=5.0.4",
+    "python-dotenv>=1.0.1",
+    "pyyaml>=6.0.1",
+    "aiocron>=1.8",
+    "aiohttp>=3.9.5",
+    "yamale>=5.2.1",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
     "bs4>=0.0.2",
     "lxml>=5.2.2",
-    "multicall>=0.9.0",
     "web3>=6.19.0",
+    "multicall>=0.9.0",
     "taospy>=2.7.13",
     # "asyncpg>=0.29.0",
     # "pymongo>=4.7.2",

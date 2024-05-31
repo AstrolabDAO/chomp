@@ -1,18 +1,19 @@
 from collections import deque
 from hashlib import md5
-import asyncio
+from asyncio import gather, Task, sleep
 import json
 import websockets
 
 from src.model import Collector, ResourceField, Tsdb
-from src.utils import floor_utc, log_debug, log_error, log_warn, select_from_dict
+from src.utils import floor_utc, log_debug, log_error, log_warn, select_nested
 from src.actions.store import store
 from src.actions.transform import transform
 from src.cache import claim_task, ensure_claim_task
 from src.safe_eval import safe_eval
 import src.state as state
 
-async def schedule(c: Collector) -> list[asyncio.Task]:
+async def schedule(c: Collector) -> list[Task]:
+
   epochs_by_route: dict[str, deque[dict]] = {}
   default_handler_by_route: dict[str, callable] = {}
   batched_fields_by_route: dict[str, list[ResourceField]] = {}
@@ -22,12 +23,12 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
   async def subscribe(c: Collector, field: ResourceField, route_hash: str):
 
     url = field.target
-    if state.verbose:
+    if state.args.verbose:
       log_debug(f"Subscribing to {url} for {c.name}.{field.name}.{c.interval}...")
 
     retry_count = 0
 
-    while retry_count <= state.max_retries:
+    while retry_count <= state.args.max_retries:
       try:
         async with websockets.connect(url) as ws:
           if field.params:
@@ -44,7 +45,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
             for field in batched_fields_by_route[route_hash]:
               if field.handler and not handled.setdefault(field.handler, {}).get(field.selector, False):
                 try:
-                  data = select_from_dict(field.selector, res)
+                  data = select_nested(field.selector, res)
                   if data:
                     field.handler(data, epochs_by_route[url]) # map data with handler
                     pass
@@ -52,7 +53,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
                   log_warn(f"Failed to handle websocket data from {url} for {c.name}.{field.name}: {e}")
                 handled.setdefault(field.handler, {})[field.selector] = True
 
-            # if state.verbose: # <-- way too verbose
+            # if state.args.verbose: # <-- way too verbose
             #   log_debug(f"Handled websocket data {data} from {url} for {c.name}, route state:\n{epochs_by_route[url][0]}")
 
         # If we exit the loop without an exception, reset retry count
@@ -60,25 +61,23 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
 
       except (websockets.exceptions.ConnectionClosedError, ConnectionResetError) as e:
         retry_count += 1
-        log_error(f"Connection error ({e}) occurred. Attempting to reconnect to {url} for {c.name} (retry {retry_count}/{state.max_retries})...")
-        if retry_count > state.max_retries:
-          log_error(f"Exceeded max retries ({state.max_retries}). Giving up on {url} for {c.name}.")
+        log_error(f"Connection error ({e}) occurred. Attempting to reconnect to {url} for {c.name} (retry {retry_count}/{state.args.max_retries})...")
+        if retry_count > state.args.max_retries:
+          log_error(f"Exceeded max retries ({state.args.max_retries}). Giving up on {url} for {c.name}.")
           break
-        sleep_time = state.retry_cooldown * retry_count
-        await asyncio.sleep(sleep_time)
+        sleep_time = state.args.retry_cooldown * retry_count
+        await sleep(sleep_time)
       except Exception as e:
         log_error(f"Unexpected error occurred: {e}")
         retry_count += 1
-        if retry_count > state.max_retries:
-          log_error(f"Exceeded max retries ({state.max_retries}). Giving up on {url} for {c.name}.")
+        if retry_count > state.args.max_retries:
+          log_error(f"Exceeded max retries ({state.args.max_retries}). Giving up on {url} for {c.name}.")
           break
-        sleep_time = state.retry_cooldown * retry_count
-        await asyncio.sleep(sleep_time)
+        sleep_time = state.args.retry_cooldown * retry_count
+        await sleep(sleep_time)
 
   # collect function (one per collector)
   async def collect(c: Collector):
-    if state.verbose:
-      log_debug(f"Collecting {c.name}.{c.interval}")
     await ensure_claim_task(c)
     # batch of reducers/transformers by route
     # iterate over key/value pairs
@@ -99,18 +98,17 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
           continue
         if len(epochs) > 32: # keep the last 32 epochs (can be costly if many agg trades are stored in memory)
           epochs.pop()
-        if state.verbose:
+        if state.args.verbose:
           log_debug(f"Reduced {c.name}.{field.name} -> {field.value}")
         # apply transformers to the field value if any
         if field.transformers:
           field.value = transform(c, field)
-        if state.verbose:
+        if state.args.verbose:
           log_debug(f"Transformed {c.name}.{field.name} -> {field.value}")
-        c.data_by_field[field.name] = field.value
-      if state.verbose:
+      if state.args.verbose:
         log_debug(f"Appending epoch {len(epochs)} to {c.name}...")
       epochs.appendleft({}) # new epoch
-    if state.verbose:
+    if state.args.verbose:
       log_debug(f"{c.name} collector state:\n{c.data_by_field}")
     if collected_batches > 0:
       c.collection_time = floor_utc(c.interval) # round down to theoretical task time
@@ -150,7 +148,7 @@ async def schedule(c: Collector) -> list[asyncio.Task]:
       tasks.append(subscribe(c, field, route_hash))
 
   # subscribe all at once, run in the background
-  asyncio.gather(*tasks)
+  gather(*tasks)
 
   # register/schedule the collector
   return [await state.scheduler.add_collector(c, fn=collect, start=False)]

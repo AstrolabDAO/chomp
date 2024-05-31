@@ -1,59 +1,57 @@
-import asyncio
+from asyncio import Task, gather
 from hashlib import md5
 import json
-import requests
+from aiohttp import ClientSession
 
 from src.model import Collector
-from src.utils import floor_utc, interval_to_delta, interval_to_seconds, log_debug, log_error, select_from_dict
-from src.actions.store import store
-from src.actions.transform import transform
+from src.utils import log_error, select_nested
 from src.cache import ensure_claim_task, get_or_set_cache
 import src.state as state
+from src.actions.store import transform_and_store
 
-def fetch_json(url: str) -> str:
-  response = requests.get(url)
-  if response.status_code == 200:
-    return response.text
-  return ""
+async def fetch_json(url: str) -> str:
+  async with ClientSession() as session:
+    async with session.get(url) as response:
+      if response.status == 200:
+        return await response.text()
+      return ""
 
-async def schedule(c: Collector) -> list[asyncio.Task]:
+async def schedule(c: Collector) -> list[Task]:
 
   data_by_route: dict[str, dict] = {}
+  hashes: dict[str, str] = {}
 
   async def collect(c: Collector):
-    if state.verbose:
-      log_debug(f"Collecting {c.name}.{c.interval}")
     await ensure_claim_task(c)
-    expiry_sec = interval_to_seconds(c.interval)
+
+    async def fetch_hashed(url: str) -> dict:
+      data_str = await get_or_set_cache(hashes[url], lambda: fetch_json(url), c.interval_sec)
+      try:
+        data_by_route[hashes[url]] = json.loads(data_str)
+      except Exception as e:
+        log_error(f"Failed to parse JSON response from {url}: {e}")
+
+    fetch_tasks = []
     for field in c.fields:
-      url = field.target
-      if not url:
-        log_error(f"Missing target URL for field scrapper {c.name}.{field.name}, skipping...")
-        continue
-      url = url.strip().format(**c.data_by_field) # inject fields inside url if required
+      if field.target:
+        url = field.target
+        url = url.strip().format(**c.data_by_field) # inject fields inside url if required
 
-      # Create a unique key using a hash of the URL and interval
-      route_hash = md5(f"{url}:{c.interval}".encode()).hexdigest()
-      if not route_hash in data_by_route:
-        data_str = await get_or_set_cache(route_hash, lambda: fetch_json(url), expiry_sec)
-        try:
-          data_by_route[route_hash] = json.loads(data_str)
-        except Exception as e:
-          log_error(f"Failed to parse JSON response from {url}: {e}")
-          continue
+        # Create a unique key using a hash of the URL and interval
+        if not url in hashes:
+          hashes[url] = md5(f"{url}:{c.interval}".encode()).hexdigest()
+        if not hashes[url] in data_by_route:
+          fetch_tasks.append(fetch_hashed(url))
 
-      field.value = select_from_dict(field.selector, data_by_route[route_hash])
+    await gather(*fetch_tasks)
 
-      # Apply transformations if any
-      if field.value and field.transformers:
-        field.value = transform(c, field)
-      c.data_by_field[field.name] = field.value
+    for field in [f for f in c.fields if f.target]:
+      field.value = select_nested(field.selector, data_by_route[hashes[field.target]])
+
+    await transform_and_store(c)
 
     # reset local parser cache
     data_by_route.clear()
-    c.collection_time = floor_utc(c.interval) # round down to theoretical task time
-    await store(c)
 
   # globally register/schedule the collector
   return [await state.scheduler.add_collector(c, fn=collect, start=False)]
-
