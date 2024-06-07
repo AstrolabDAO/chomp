@@ -69,6 +69,15 @@ The following have been drafted, but remain untested
 - [MongoDB](./src/adapters/mongodb.py) (using timeseries collections)
 - [KDB (KX)](./src/adapters/kx.py)
 
+
+### Quick Setup
+
+Test a full setup (clustered ingesters + server), all at once:
+
+```bash
+cd ./setup && sudo bash ./test-setup.bash
+```
+
 ### Default Backend Docker Setup
 
 1. **Prepare the Environment:**
@@ -93,6 +102,7 @@ The following have been drafted, but remain untested
 Make sure that the following dependencies are installed:
 - Python (>= 3.10) and pip aliased to `python` and `pip`.
 - Docker (>= 21.0) and aliased to `docker`
+- TDengine client for local installs with default TDengine back-end (https://docs.tdengine.com/get-started/package/)
 
 [Learn how to install Python here.](./https://www.python.org/)
 
@@ -107,14 +117,6 @@ Make sure that the following dependencies are installed:
   ```bash
   pdm install
   ```
-
-### Quick Setup
-
-Test a full setup (clustered ingesters + server), all at once:
-
-```bash
-cd ./setup && bash ./test-setup.bash
-```
 
 ### Runtime
 

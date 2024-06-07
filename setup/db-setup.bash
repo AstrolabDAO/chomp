@@ -1,8 +1,13 @@
 #!/bin/bash
 source .env.test
 
+if [ "$EUID" -ne 0 ]; then
+    echo "This script must be run with sudo."
+    exit 1
+fi
+
 echo "Building $DB_IMAGE image..."
-sudo docker build -f Dockerfile.db -t $DB_IMAGE . --no-cache
+docker build -f Dockerfile.db -t $DB_IMAGE . --no-cache
 
 # Check if the container is already running
 if docker ps -a --format '{{.Names}}' | grep -q "^${DB_TEST_CONTAINER}$"; then
@@ -13,9 +18,17 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${DB_TEST_CONTAINER}$"; then
     docker rm $DB_TEST_CONTAINER
 fi
 
+# Check if the network already exists
+if ! docker network inspect $DOCKER_NET &> /dev/null; then
+    echo "Creating docker network $DOCKER_NET..."
+    docker network create $DOCKER_NET
+else
+    echo "Using existing docker network $DOCKER_NET..."
+fi
+
 # Run the new container instance
 echo "Starting $DB_TEST_CONTAINER container..."
-docker run -d --env-file .env.test --network botnet --name $DB_TEST_CONTAINER -p $REDIS_PORT:$REDIS_PORT -p $TAOS_PORT:$TAOS_PORT -p $TAOS_HTTP_PORT:$TAOS_HTTP_PORT $DB_IMAGE
+docker run -d --env-file .env.test --network $DOCKER_NET --name $DB_TEST_CONTAINER -p $REDIS_PORT:$REDIS_PORT -p $TAOS_PORT:$TAOS_PORT -p $TAOS_HTTP_PORT:$TAOS_HTTP_PORT $DB_IMAGE
 
 # Wait 5s for the db to start
 sleep 5
