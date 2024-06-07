@@ -2,12 +2,13 @@
   <img style="border-radius=25px; max-height=250px;" height="400" src="./banner.png" />
   <!-- <h1>Chomp</h1> -->
   <p>
-    <a href="https://t.me/chomp_ingester"><img alt="Chomp" src="https://img.shields.io/badge/Telegram-chomp_ingester-blue?logo=telegram">
-    <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/github/license/AstrolabDAO/chomp?color=3AB2FF" /></a>
+    <a href="https://t.me/chomp_ingester"><img alt="Chomp" src="https://img.shields.io/badge/Chomp%20Ingester-2CA5E0?style=flat-squeare&logo=telegram&logoColor=white">
     <a href="https://discord.gg/xEEHAY2v5t"><img alt="Discord Chat" src="https://img.shields.io/discord/984518964371673140?label=Astrolab%20DAO&logo=discord"/></a>
+  <p>
+  </p>
     <a href="https://twitter.com/AstrolabDAO"><img alt="Twitter Follow" src="https://img.shields.io/twitter/follow/AstrolabDAO?label=@AstrolabDAO&style=social"></a>
-
     <!-- <a href="https://docs.astrolab.fi"><img alt="Astrolab Docs" src="https://img.shields.io/badge/astrolab_docs-F9C3B3" /></a> -->
+    <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/github/license/AstrolabDAO/chomp?color=3AB2FF" /></a>
   </p>
   <!-- <p>
     <strong>by <a href="https://astrolab.fi">Astrolab DAO</a> & friends</strong>
@@ -22,7 +23,7 @@ Chomp is a small creature with unquenchable craving for data.
 - A productivity-first, highly modular data ingester that retrieves, transforms and archives data from Web2 and Web3 sources.
 It allows anyone to set up a data back-end and ETL pipelines in minutes, all from a simple YAML configuration file.
 - Lightweight, you can self-host Chomp on a Raspberry Pi 4, its built-in sync makes it cluster-native.
-- A faster alternative to [Ponder](https://ponder.sh/) and [TheGraph](https://thegraph.com/) if you need to start tracking your protocol's activity in real time without GraphQL.
+- A faster alternative to [Ponder](https://ponder.sh/) and [TheGraph](https://thegraph.com/) if you need to track your protocol's activity in real time.
 - Plug and play, test it now! `cd ./setup && ./test-setup.bash`
 - An out-of-the-box http and websocket API to expose all your ingested data
 
@@ -89,7 +90,10 @@ The following have been drafted, but remain untested
 
 ### Manual Installation
 
-Make sure Python3 and pip are installed and aliased to `python` and `pip`.
+Make sure that the following dependencies are installed:
+- Python (>= 3.10) and pip aliased to `python` and `pip`.
+- Docker (>= 21.0) and aliased to `docker`
+
 [Learn how to install Python here.](./https://www.python.org/)
 
 1. **Install and pdm if missing:**
@@ -103,6 +107,14 @@ Make sure Python3 and pip are installed and aliased to `python` and `pip`.
   ```bash
   pdm install
   ```
+
+### Quick Setup
+
+Test a full setup (clustered ingesters + server), all at once:
+
+```bash
+cd ./setup && bash ./test-setup.bash
+```
 
 ### Runtime
 
@@ -129,14 +141,6 @@ It will expose all of `-c` ingested resources, both as http api and websocket ap
 
 ```bash
 pdm python main.py -e .env.example -c ./examples/diverse.yml --server
-```
-
-#### Quick Setup
-
-Test a full setup (clustered ingesters + server), all at once:
-
-```bash
-cd ./setup && ./test-setup.bash
 ```
 
 ### Docker Image Setup (Docker/Kubernetes)

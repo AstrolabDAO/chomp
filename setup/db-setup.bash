@@ -2,7 +2,7 @@
 source .env.test
 
 echo "Building $DB_IMAGE image..."
-docker build -f Dockerfile.db -t $DB_IMAGE . --no-cache
+sudo docker build -f Dockerfile.db -t $DB_IMAGE . --no-cache
 
 # Check if the container is already running
 if docker ps -a --format '{{.Names}}' | grep -q "^${DB_TEST_CONTAINER}$"; then

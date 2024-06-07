@@ -4,7 +4,6 @@ from hashlib import md5, sha256
 import logging
 from os import urandom, environ as env
 from typing import Literal
-from wcwidth import wcswidth
 from web3 import Web3
 
 from src.utils.types import is_float
@@ -83,7 +82,7 @@ def split_chain_addr(target: str) -> tuple[str|int, str]:
   return int(tokens[0]), Web3.to_checksum_address(tokens[1])
 
 def prettify(data, headers):
-  col_widths = [max(wcswidth(str(item)) for item in column) for column in zip(headers, *data)]
+  col_widths = [max(len(str(item)) for item in column) for column in zip(headers, *data)]
   row_fmt = "| " + " | ".join(f"{{:<{w}}}" for w in col_widths) + " |"
   x_sep = "+" + "+".join(["-" * (col_width + 2) for col_width in col_widths]) + "+\n"
   return x_sep + row_fmt.format(*headers) + "\n" + x_sep + "\n".join(row_fmt.format(*row) for row in data) + "\n" + x_sep
