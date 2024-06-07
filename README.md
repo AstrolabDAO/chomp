@@ -2,13 +2,11 @@
   <img style="border-radius=25px; max-height=250px;" height="400" src="./banner.png" />
   <!-- <h1>Chomp</h1> -->
   <p>
-    <a href="https://t.me/chomp_ingester"><img alt="Chomp" src="https://img.shields.io/badge/Chomp%20Ingester-2CA5E0?style=flat-squeare&logo=telegram&logoColor=white">
-    <a href="https://discord.gg/xEEHAY2v5t"><img alt="Discord Chat" src="https://img.shields.io/discord/984518964371673140?label=Astrolab%20DAO&logo=discord"/></a>
-  <p>
-  </p>
+    <a href="https://t.me/chomp_ingester"><img alt="Chomp" src="https://img.shields.io/badge/Chomp--white?style=social&logo=telegram">
+    <a href="https://discord.gg/xEEHAY2v5t"><img alt="Discord Chat" src="https://img.shields.io/badge/Astrolab%20DAO--white?logo=discord&style=social"/></a>
     <a href="https://twitter.com/AstrolabDAO"><img alt="Twitter Follow" src="https://img.shields.io/twitter/follow/AstrolabDAO?label=@AstrolabDAO&style=social"></a>
     <!-- <a href="https://docs.astrolab.fi"><img alt="Astrolab Docs" src="https://img.shields.io/badge/astrolab_docs-F9C3B3" /></a> -->
-    <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/github/license/AstrolabDAO/chomp?color=3AB2FF" /></a>
+    <a href="https://opensource.org/licenses/MIT"><img alt="License" src="https://img.shields.io/github/license/AstrolabDAO/chomp?style=social" /></a>
   </p>
   <!-- <p>
     <strong>by <a href="https://astrolab.fi">Astrolab DAO</a> & friends</strong>
@@ -100,11 +98,11 @@ cd ./setup && sudo bash ./test-setup.bash
 ### Manual Installation
 
 Make sure that the following dependencies are installed:
-- Python (>= 3.10) and pip aliased to `python` and `pip`.
-- Docker (>= 21.0) and aliased to `docker`
-- TDengine client for local installs with default TDengine back-end (https://docs.tdengine.com/get-started/package/)
-
-[Learn how to install Python here.](./https://www.python.org/)
+- Python (>= 3.10) and pip aliased to `python` and `pip` [cf. official docs](./https://www.python.org/)
+- Docker (>= 21.0) and aliased to `docker` [cf. official docs](https://docs.docker.com/engine/install/ubuntu/)
+- TDengine client for local installs with TDengine back-end default [cf. official docs](https://docs.tdengine.com/get-started/package/)
+NB: the taos client should be compatible with [./setup/Dockerfile.db:{taos_image_version}](./setup/Dockerfile.db) eg. 3.2.3.0
+- Redis client [cf. official docs](https://redis.io/docs/latest/operate/oss_and_stack/install/install-redis/install-redis-on-linux/) for local installs
 
 1. **Install and pdm if missing:**
 
