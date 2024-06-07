@@ -1,21 +1,21 @@
-# Chomp Collectors Schema
+# Chomp Ingesters Schema
 ---
-scrapper: list(include('collector'), required=False)
-http_api: list(include('collector'), required=False)
-ws_api: list(include('collector'), required=False)
-fix_api: list(include('collector'), required=False)
-evm_caller: list(include('collector'), required=False)
-evm_logger: list(include('collector'), required=False)
-solana_caller: list(include('collector'), required=False)
-solana_logger: list(include('collector'), required=False)
-sui_caller: list(include('collector'), required=False)
-sui_logger: list(include('collector'), required=False)
-aptos_caller: list(include('collector'), required=False)
-aptos_logger: list(include('collector'), required=False)
-ton_caller: list(include('collector'), required=False)
-ton_logger: list(include('collector'), required=False)
-cosmos_caller: list(include('collector'), required=False)
-cosmos_logger: list(include('collector'), required=False)
+scrapper: list(include('ingester'), required=False)
+http_api: list(include('ingester'), required=False)
+ws_api: list(include('ingester'), required=False)
+fix_api: list(include('ingester'), required=False)
+evm_caller: list(include('ingester'), required=False)
+evm_logger: list(include('ingester'), required=False)
+solana_caller: list(include('ingester'), required=False)
+solana_logger: list(include('ingester'), required=False)
+sui_caller: list(include('ingester'), required=False)
+sui_logger: list(include('ingester'), required=False)
+aptos_caller: list(include('ingester'), required=False)
+aptos_logger: list(include('ingester'), required=False)
+ton_caller: list(include('ingester'), required=False)
+ton_logger: list(include('ingester'), required=False)
+cosmos_caller: list(include('ingester'), required=False)
+cosmos_logger: list(include('ingester'), required=False)
 
 # Base Definitions
 ---
@@ -34,7 +34,7 @@ targettable: &targettable
 field:
   <<: *targettable
 
-collector:
+ingester:
   <<: *targettable
   interval: enum('s2', 's5', 's10', 's20', 's30', 'm1', 'm2', 'm5', 'm10', 'm15', 'm30', 'h1', 'h4', 'h12', 'D1', 'D2', 'D3', 'W1', 'M1', 'Y1')
   resource_type: enum('timeseries', 'value', 'series', required=False)

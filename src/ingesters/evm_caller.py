@@ -1,18 +1,18 @@
 from asyncio import Task
 from multicall import Call, Multicall, constants as mc_const
 
-from src.model import Collector, ResourceField
+from src.model import Ingester, ResourceField
 from src.utils import log_debug, log_error, log_warn
-from src.actions.store import store, transform_and_store
+from src.actions import store, transform_and_store, scheduler
 from src.cache import ensure_claim_task, get_or_set_cache
 import src.state as state
 
 def parse_generic(data: any) -> any:
   return data
 
-async def schedule(c: Collector) -> list[Task]:
+async def schedule(c: Ingester) -> list[Task]:
 
-  async def collect(c: Collector):
+  async def ingest(c: Ingester):
     await ensure_claim_task(c)
     unique_calls, calls_by_chain = set(), {}
     field_by_name = {f.name: f for f in c.fields}
@@ -26,11 +26,11 @@ async def schedule(c: Collector) -> list[Task]:
 
       chain_id, addr = field.chain_addr()
       if chain_id not in calls_by_chain:
-        client = state.get_web3_client(chain_id, rolling=True)
+        client = state.web3.client(chain_id)
         calls_by_chain[chain_id] = Multicall(calls=[], _w3=client, require_success=True, gas_limit=mc_const.GAS_LIMIT)
       calls_by_chain[chain_id].calls.append(Call(target=addr, function=[field.selector, *field.params], returns=[[field.name, parse_generic]]))
 
-    tp = state.get_thread_pool()
+    tp = state.thread_pool
 
     def call_multi(m: Multicall):
       try:
@@ -42,7 +42,7 @@ async def schedule(c: Collector) -> list[Task]:
             return output
           except Exception as e: # (TimeoutError, FutureTimeoutError):
             log_error(f"Multicall for chain {chain_id} failed: {e}, switching RPC...")
-            m.w3 = state.get_web3_client(chain_id, rolling=True)
+            m.w3 = state.web3.client(chain_id, rolling=True)
             retry_count += 1
 
         if not output:
@@ -64,9 +64,9 @@ async def schedule(c: Collector) -> list[Task]:
         c.data_by_field[field.name] = field.value
 
     if state.args.verbose:
-      log_debug(f"Collected {c.name} -> {c.data_by_field}")
+      log_debug(f"Ingested {c.name} -> {c.data_by_field}")
 
     await transform_and_store(c)
 
-  # globally register/schedule the collector
-  return [await state.scheduler.add_collector(c, fn=collect, start=False)]
+  # globally register/schedule the ingester
+  return [await scheduler.add_ingester(c, fn=ingest, start=False)]

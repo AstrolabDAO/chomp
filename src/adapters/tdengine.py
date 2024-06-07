@@ -1,13 +1,14 @@
-# TODO: finish+test this adapter
-
-from datetime import datetime
-from typing import Optional, Type
+from asyncio import gather
+from datetime import UTC, datetime
 from os import environ as env
+from cache import get_or_set_cache
 from taos import TaosConnection, TaosCursor, TaosResult, TaosStmt, connect, new_bind_params, new_multi_binds
-from taos.tmq import Message, Consumer
+from dateutil.relativedelta import relativedelta
 
-from src.utils import interval_to_sql, log_error, log_info, log_warn
-from src.model import Collector, FieldType, Interval, TimeUnit, Resource, Tsdb
+from src.utils import log_error, log_info, log_warn, Interval, TimeUnit, interval_to_sql, fmt_date, ago
+from src.model import Ingester, FieldType, Resource, Tsdb
+import src.state as state
+
 
 TYPES: dict[FieldType, str] = {
   "int8": "tinyint", # 8 bits char
@@ -28,6 +29,34 @@ TYPES: dict[FieldType, str] = {
   "string": "nchar", # fixed length array of 4 bytes uchar
   "binary": "binary", # fixed length array of 1 byte uchar
   "varbinary": "varbinary", # variable length array of 1 byte uchar
+}
+
+INTERVALS: dict[str, str] = {
+  "s1": "1s",
+  "s2": "2s",
+  "s5": "5s",
+  "s10": "10s",
+  "s15": "15s",
+  "s20": "20s",
+  "s30": "30s",
+  "m1": "1m",
+  "m2": "2m",
+  "m5": "5m",
+  "m10": "10m",
+  "m15": "15m",
+  "m30": "30m",
+  "h1": "1h",
+  "h2": "2h",
+  "h4": "4h",
+  "h6": "6h",
+  "h8": "8h",
+  "h12": "12h",
+  "D1": "1d",
+  "D2": "2d",
+  "D3": "3d",
+  "W1": "1w",
+  "M1": "1n",
+  "Y1": "1y"
 }
 
 PREPARE_STMT = {}
@@ -108,10 +137,10 @@ class Taos(Tsdb):
     else:
       self.conn.select_db(db)
 
-  async def create_table(self, c: Collector, name=""):
+  async def create_table(self, c: Ingester, name=""):
     table = name or c.name
     log_info(f"Creating table {self.db}.{table}...")
-    fields = ", ".join([f"`{field.name}` {TYPES[field.type]}" for field in c.fields])
+    fields = ", ".join([f"`{field.name}` {TYPES[field.type]}" for field in c.fields if not field.transient])
     sql = f"""
     CREATE TABLE IF NOT EXISTS {self.db}.`{table}` (
       ts timestamp,
@@ -125,13 +154,13 @@ class Taos(Tsdb):
       log_error(f"Failed to create table {self.db}.{table}", e)
       raise e
 
-  async def insert(self, c: Collector, table=""):
+  async def insert(self, c: Ingester, table=""):
     await self.ensure_connected()
     table = table or c.name
     persistent_data = [field for field in c.fields if not field.transient]
     fields = "`, `".join(field.name for field in persistent_data)
     values = ", ".join([field.sql_escape() for field in persistent_data])
-    sql = f"INSERT INTO {self.db}.`{table}` (ts, `{fields}`) VALUES ('{c.collection_time}', {values});"
+    sql = f"INSERT INTO {self.db}.`{table}` (ts, `{fields}`) VALUES ('{c.ingestion_time}', {values});"
     try:
       self.cursor.execute(sql)
     except Exception as e:
@@ -143,7 +172,7 @@ class Taos(Tsdb):
         log_error(f"Failed to insert data into {self.db}.{table}", e)
         raise e
 
-  async def insert_many(self, c: Collector, values: list[tuple], table=""):
+  async def insert_many(self, c: Ingester, values: list[tuple], table=""):
     table = table or c.name
     persistent_fields = [field.name for field in c.fields if not field.transient]
     fields = "`, `".join(persistent_fields)
@@ -156,39 +185,41 @@ class Taos(Tsdb):
     stmt.bind(params)
     stmt.execute()
 
-  async def fetch(self, table: str, from_date: Optional[datetime], to_date: Optional[datetime], aggregation_interval: Optional[str], columns: list[str] = []):
-    if not to_date:
-      to_date = datetime.now()
+  async def get_columns(self, table: str) -> list[tuple[str, str, str]]:
+    self.cursor.execute(f"DESCRIBE {self.db}.`{table}`;")
+    return self.cursor.fetchall()
 
-    agg_bucket = interval_to_sql(aggregation_interval)
+  async def fetch(self, table: str, from_date: datetime=None, to_date: datetime=None, aggregation_interval: Interval="m5", columns: list[str] = []):
 
-    # Define columns with last aggregation
-    select_cols = []
-    if not columns:
-      select_cols = ["last(*) AS *"]  # Select all columns with last aggregation
-    else:
-      for col in columns:
-        select_cols.append(f"last({col}) AS {col}")
+    to_date, from_date = to_date or datetime.now(UTC), from_date or ago(years=1)
+    agg_bucket = INTERVALS[aggregation_interval]
+    columns = columns or await get_or_set_cache(f"{table}:columns",
+      callback=lambda: self.get_columns(table),
+      expiry=300, pickled=True) # 5 mins cache
 
-    conditions = []
-    params = []
+    select_cols = ", ".join([f"last(`{col[0]}`) AS {col[0]}" for col in columns])
+    conditions = [
+      f"ts >= '{fmt_date(from_date, keepTz=False)}'" if from_date else None,
+      f"ts <= '{fmt_date(to_date, keepTz=False)}'" if to_date else None,
+    ]
+    where_clause = f"WHERE {' AND '.join(filter(None, conditions))}" if any(conditions) else ""
+    sql = f"SELECT {select_cols} FROM {self.db}.`{table}` {where_clause} INTERVAL({agg_bucket}) SLIDING({agg_bucket}) FILL(prev);" # ORDER BY ts DESC LIMIT 1
 
-    if from_date:
-      conditions.append(f"ts >= '{from_date.strftime('%Y-%m-%d %H:%M:%S')}'")
-    if to_date:
-      conditions.append(f"ts <= '{to_date.strftime('%Y-%m-%d %H:%M:%S')}'")
+    try:
+      self.cursor.execute(sql)
+      return self.cursor.fetchall()
+    except Exception as e:
+      log_error(f"Failed to fetch data into {self.db}.{table}", e)
+      raise e
 
-    where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
+  async def fetch_batch(self, tables: list[str], from_date: datetime=None, to_date: datetime=None, aggregation_interval: Interval="m5", columns: list[str] = []):
+    to_date = to_date or datetime.now(UTC)
+    from_date = from_date or to_date - relativedelta(years=10)
+    return await gather(*[self.fetch(table, from_date, to_date, aggregation_interval, columns) for table in tables])
 
-    query = f"""
-      SELECT {select_cols}
-      FROM {self.db}.`{table}`
-      {where_clause}
-      INTERVAL({agg_bucket}) SLIDING({agg_bucket});
-    """
-    # GROUP BY tb DESC
-    # LIMIT 1;
-    return await self.fetch(query)
+  async def fetch_all(self, query: str) -> TaosResult:
+    self.cursor.execute(query)
+    return self.cursor.fetchall()
 
   async def commit(self):
     self.conn.commit()

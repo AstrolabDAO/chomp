@@ -1,9 +1,9 @@
 from asyncio import Task
 from web3 import Web3
 
-from src.model import Collector, ResourceField
+from src.model import Ingester, ResourceField
 from src.utils import log_debug, log_error, log_info, log_warn, split_chain_addr
-from src.actions.store import store, transform_and_store
+from src.actions import store, transform_and_store, scheduler
 from src.cache import ensure_claim_task, get_or_set_cache
 import src.state as state
 
@@ -36,7 +36,7 @@ def reorder_decoded_params(decoded: list, indexed: list[bool]) -> list:
       non_index_count += 1
   return reordered
 
-async def schedule(c: Collector) -> list[Task]:
+async def schedule(c: Ingester) -> list[Task]:
 
   contracts: set[str] = set()
   data_by_event: dict[str, dict] = {}
@@ -84,7 +84,7 @@ async def schedule(c: Collector) -> list[Task]:
 
   def poll_events(contract: str):
     chain_id, addr = split_chain_addr(contract)
-    client = state.get_web3_client(chain_id, rolling=True)
+    client = state.web3.client(chain_id)
     f = filter_by_contract[contract]
     retry_count = 0
     output = None
@@ -110,14 +110,14 @@ async def schedule(c: Collector) -> list[Task]:
         start_block = end_block + 1
       except Exception as l:
         log_error(f"Failed to poll event logs for contract {c}: {l}")
-        client = state.get_web3_client(chain_id, rolling=True)
+        client = state.web3.client(chain_id, rolling=True)
         retry_count += 1
 
-  async def collect(c: Collector):
+  async def ingest(c: Ingester):
     await ensure_claim_task(c)
 
     future_by_contract = {}
-    tp = state.get_thread_pool()
+    tp = state.thread_pool
     for contract in contracts:
       future_by_contract[contract] = tp.submit(poll_events, contract)
 
@@ -129,9 +129,9 @@ async def schedule(c: Collector) -> list[Task]:
         log_error(f"Failed to poll events for {field.target}: {e}")
 
     if state.args.verbose:
-      log_debug(f"Collected {c.name} -> {c.data_by_field}")
+      log_debug(f"Ingested {c.name} -> {c.data_by_field}")
 
     await transform_and_store(c)
 
-  # globally register/schedule the collector
-  return [await state.scheduler.add_collector(c, fn=collect, start=False)]
+  # globally register/schedule the ingester
+  return [await scheduler.add_ingester(c, fn=ingest, start=False)]

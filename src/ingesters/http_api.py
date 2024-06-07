@@ -3,10 +3,10 @@ from hashlib import md5
 import json
 from aiohttp import ClientSession
 
-from src.model import Collector
 from src.utils import log_error, select_nested
+from src.model import Ingester
 from src.cache import ensure_claim_task, get_or_set_cache
-import src.state as state
+from src.actions.schedule import scheduler
 from src.actions.store import transform_and_store
 
 async def fetch_json(url: str) -> str:
@@ -16,12 +16,12 @@ async def fetch_json(url: str) -> str:
         return await response.text()
       return ""
 
-async def schedule(c: Collector) -> list[Task]:
+async def schedule(c: Ingester) -> list[Task]:
 
   data_by_route: dict[str, dict] = {}
   hashes: dict[str, str] = {}
 
-  async def collect(c: Collector):
+  async def ingest(c: Ingester):
     await ensure_claim_task(c)
 
     async def fetch_hashed(url: str) -> dict:
@@ -53,5 +53,5 @@ async def schedule(c: Collector) -> list[Task]:
     # reset local parser cache
     data_by_route.clear()
 
-  # globally register/schedule the collector
-  return [await state.scheduler.add_collector(c, fn=collect, start=False)]
+  # globally register/schedule the ingester
+  return [await scheduler.add_ingester(c, fn=ingest, start=False)]

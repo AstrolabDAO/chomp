@@ -1,12 +1,15 @@
+# TODO: finish+test
+
 from os import environ as env
 from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
-from typing import Optional, List
-from datetime import datetime, timedelta
+from typing import Optional
+from datetime import UTC, datetime, timedelta
+from dateutil.relativedelta import relativedelta
 
-from src.utils import log_info
-from src.model import Collector, Interval, Tsdb
+from src.utils import log_info, Interval
+from src.model import Ingester, Tsdb
 
 INTERVAL_TO_MONGO: dict[Interval, str] = {
   "m1": "1m",
@@ -64,38 +67,38 @@ class MongoDb(Tsdb):
     return self.client[self.db]
 
   async def create_db(self, name: str, options=None, force=False):
-    if name not in self.get_db().list_collection_names():
-      self.get_db().create_collection(name)
-      log_info(f"Created collection {name}")
+    if name not in self.get_db().list_ingestion_names():
+      self.get_db().create_ingestion(name)
+      log_info(f"Created ingestion {name}")
 
   async def use_db(self, db_name: str):
     self.db = db_name
 
-  async def create_table(self, c: Collector, name: str = "", force: bool = False):
+  async def create_table(self, c: Ingester, name: str = "", force: bool = False):
     table = name or c.name
     self.collection = self.get_db()[table]
-    if table not in self.get_db().list_collection_names():
+    if table not in self.get_db().list_ingestion_names():
       self.collection.create_index([("ts", 1)], unique=True)
       log_info(f"Created timeseries table {self.get_db().name}.{table}")
 
-  async def insert(self, c: Collector, table: str = ""):
+  async def insert(self, c: Ingester, table: str = ""):
     table = table or c.name
     self.collection = self.get_db()[table]
-    data = {"_id": c.collection_time}
+    data = {"_id": c.ingestion_time}
     persistent_data = {field.name: field.value for field in c.fields if not field.transient}
     for field in persistent_data:
       data[field.name] = field.value
     self.collection.insert_one(data)
 
-  async def insert_many(self, c: Collector, values: List[tuple], table: str = ""):
+  async def insert_many(self, c: Ingester, values: list[tuple], table: str = ""):
     table = table or c.name
     self.collection = self.get_db()[table]
     data = [{"_id": value[0], **{field.name: value[i + 1] for i, field in enumerate(c.fields) if not field.transient}} for value in values]
     self.collection.insert_many(data)
 
-  async def fetch(self, table: str, from_date: Optional[datetime], to_date: Optional[datetime], aggregation_interval: Optional[Interval], columns: List[str] = []):
-    if not to_date:
-      to_date = datetime.now()
+  async def fetch(self, table: str, from_date: datetime=None, to_date: datetime=None, aggregation_interval: Interval="m5", columns: list[str] = []):
+    to_date = to_date or datetime.now(UTC)
+    from_date = from_date or to_date - relativedelta(years=10)
 
     query = {"_id": {"$gte": from_date, "$lte": to_date}}
     projection = {"_id": 0}

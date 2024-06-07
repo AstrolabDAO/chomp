@@ -1,6 +1,6 @@
 [project]
 name = "chomp"
-version = "0.1.0"
+version = "0.2.0"
 description = "Lightweight, multimodal ingester, start collecting web2/3 data in minutes"
 authors = [
     # {name = "JakeTheSlug", email = "jake@astrolab.fi"},
@@ -22,6 +22,7 @@ dependencies = [
     # "asyncpg>=0.29.0",
     # "pymongo>=4.7.2",
     # "opentsdb-py>=0.6.0",
+    "orjson>=3.10.3",
 ]
 requires-python = ">=3.11"
 readme = "README.md"

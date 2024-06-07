@@ -1,12 +1,13 @@
-# TODO: finish+test this adapter
+# TODO: finish+test
 
 from os import environ as env
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from opentsdb.client import OpenTSDB_ADAPTERClient
 from opentsdb.query import Query
+from dateutil.relativedelta import relativedelta
 
-from src.model import Collector, Interval
+from src.model import Ingester, Interval
 
 INTERVAL_TO_OPENTSDB_ADAPTER: dict[Interval, str] = {
   "m1": "1m",
@@ -61,22 +62,22 @@ class OpenTSDB_ADAPTER:
   async def use_db(self, name: str):
     pass # No-op in OpenTSDB_ADAPTER
 
-  async def create_table(self, c: Collector, name=""):
+  async def create_table(self, c: Ingester, name=""):
     pass # No-op in OpenTSDB_ADAPTER
 
-  async def insert(self, c: Collector, table=""):
+  async def insert(self, c: Ingester, table=""):
     table = table or c.name
     data_points = []
     persistent_data = [field for field in c.fields if not field.transient]
     for field in persistent_data:
       data_points.append({
-        "metric": f"{c.name}.{field.name}", # can also use "tags": {"collector": c.name}
+        "metric": f"{c.name}.{field.name}", # can also use "tags": {"ingester": c.name}
         "value": field.value,
-        "timestamp": c.collection_time
+        "timestamp": c.ingestion_time
       })
     self.client.add_data_points(data_points)
 
-  async def insert_many(self, c: Collector, values: list[tuple], table=""):
+  async def insert_many(self, c: Ingester, values: list[tuple], table=""):
     data_points = []
     persistent_data = [field for field in c.fields if not field.transient]
     for value in values:
@@ -89,9 +90,9 @@ class OpenTSDB_ADAPTER:
         data_points.append(data_point)
     self.client.add_data_points(data_points)
 
-  async def fetch(self, table: str, from_date: Optional[datetime], to_date: Optional[datetime], aggregation_interval: Optional[str], columns: list[str] = []):
-    if not to_date:
-      to_date = datetime.now()
+  async def fetch(self, table: str, from_date: datetime=None, to_date: datetime=None, aggregation_interval: Interval="m5", columns: list[str] = []):
+    to_date = to_date or datetime.now(UTC)
+    from_date = from_date or to_date - relativedelta(years=10)
 
     agg_bucket = interval_to_opentsdb(aggregation_interval)
 

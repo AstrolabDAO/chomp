@@ -4,11 +4,11 @@ from hashlib import md5
 from lxml import html
 from bs4 import BeautifulSoup
 
-from src.model import Collector
 from src.utils import floor_utc, interval_to_seconds, log_error
-from src.actions.store import transform_and_store
+from src.model import Ingester
 from src.cache import ensure_claim_task, get_or_set_cache
 import src.state as state
+from src.actions import transform_and_store, scheduler
 
 def is_xpath(selector: str) -> bool:
   return selector.startswith(("//", "./"))
@@ -25,15 +25,15 @@ async def get_page(url: str) -> str:
       log_error(f"Error fetching page {url}: {e}")
   return ""
 
-async def schedule(c: Collector) -> list[Task]:
+async def schedule(c: Ingester) -> list[Task]:
 
-  # NB: not thread/async safe when multiple collectors run with same target URL
+  # NB: not thread/async safe when multiple ingesters run with same target URL
   pages: dict[str, str] = {}
   soups: dict[str, BeautifulSoup] = {}
   trees: dict[str, html.HtmlElement] = {}
   hashes: dict[str, str] = {}
 
-  async def collect(c: Collector):
+  async def ingest(c: Ingester):
     await ensure_claim_task(c)
 
     expiry_sec = interval_to_seconds(c.interval)
@@ -88,17 +88,17 @@ async def schedule(c: Collector) -> list[Task]:
         # merge all text content from matching selectors
         return "\n".join([e.get_text().lstrip() for e in els])
 
-    tp = state.get_thread_pool()
+    tp = state.thread_pool
     futures = [tp.submit(select_field, f) for f in c.fields if f.target] # lxlm and bs4 are sync -> parallelize
     for i in range(len(futures)):
       c.fields[i].value = futures[i].result()
 
     await transform_and_store(c)
 
-    # reset local caches until next collection
+    # reset local caches until next ingestion
     pages.clear()
     soups.clear()
     trees.clear()
 
-  # globally register/schedule the collector
-  return [await state.scheduler.add_collector(c, fn=collect, start=False)]
+  # globally register/schedule the ingester
+  return [await scheduler.add_ingester(c, fn=ingest, start=False)]

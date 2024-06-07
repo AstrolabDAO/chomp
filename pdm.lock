@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:7e565fc852a6b9223e9edda78a102eba53ba270419c31049ac3c58b2ca92c082"
+content_hash = "sha256:0d0b57c69758330ce4698a57177254a78232b0a41bcbfc0d90c5a60ffedf595c"
 
 [[package]]
 name = "aiocron"

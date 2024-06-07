@@ -1,12 +1,14 @@
-# TODO: finish+test this adapter
+# TODO: finish+test
 
 from os import environ as env
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 from pykx import Kdb as _Kdb, KdbException
+from dateutil.relativedelta import relativedelta
 
-from src.utils import log_info, log_error, log_warn
-from src.model import Collector, FieldType, Tsdb, TimeUnit
+from src.utils.format import log_info, log_error, log_warn
+from src.utils.date import Interval, TimeUnit
+from src.model import Ingester, FieldType, Tsdb
 
 # Define the data types mapping
 TYPES: dict[FieldType, str] = {
@@ -84,7 +86,7 @@ class Kdb(Tsdb):
   async def use_db(self, db: str):
     log_warn("Kdb does not support switching databases.")
 
-  async def create_table(self, c: Collector, name: str = "", force: bool = False):
+  async def create_table(self, c: Ingester, name: str = "", force: bool = False):
     table = name or c.name
     fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in c.fields])
     # Consider using kdb specific timestamp type based on documentation
@@ -96,7 +98,7 @@ class Kdb(Tsdb):
       log_error(f"Failed to create table {table}", e)
       raise e
 
-  async def insert(self, c: Collector, table: str = ""):
+  async def insert(self, c: Ingester, table: str = ""):
     table = table or c.name
     values = ", ".join([f"{field.value}" for field in c.fields if not field.transient])
     insert_query = f"{table}.insert((.z.p; {values}))"
@@ -106,7 +108,7 @@ class Kdb(Tsdb):
       log_error(f"Failed to insert data into {table}", e)
       raise e
 
-  async def insert_many(self, c: Collector, values: list[tuple], table: str = ""):
+  async def insert_many(self, c: Ingester, values: list[tuple], table: str = ""):
     table = table or c.name
     values_str = ", ".join([f"({', '.join(str(v) for v in value)})" for value in values])
     insert_query = f"{table}.insert(({', '.join(['.z.p'] + [field.name for field in c.fields if not field.transient])}) each {values_str})"
@@ -116,9 +118,9 @@ class Kdb(Tsdb):
       log_error(f"Failed to insert data into {table}", e)
       raise e
 
-  async def fetch(self, table: str, from_date: Optional[datetime], to_date: Optional[datetime], aggregation_interval: Optional[str], columns: list[str] = []):
-    if not to_date:
-        to_date = datetime.now()
+  async def fetch(self, table: str, from_date: datetime=None, to_date: datetime=None, aggregation_interval: Interval="m5", columns: list[str] = []):
+    to_date = to_date or datetime.now(UTC)
+    from_date = from_date or to_date - relativedelta(years=10)
 
     agg_bucket = interval_to_q(aggregation_interval)
     select_cols = columns if columns else ["ts", "*"]

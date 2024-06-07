@@ -30,7 +30,7 @@ scrapper:
         type: string
         selector: //*[@id="mw-content-text"]/div[1]/div[2]/div/table/tbody/tr[12]/td[2]
 
-# rest api collectors
+# rest api ingesters
 http_api:
   - name: CoingeckoFeeds
     interval: s30
@@ -51,7 +51,7 @@ http_api:
 
   # cex (prefer websockets for short intervals to avoid rate limits)
   - name: OkxFeeds
-    interval: s10
+    interval: s30
     resource_type: timeseries
     selector: .data[0].last
     type: float64
@@ -69,7 +69,7 @@ http_api:
 
 ws_api:
   - name: BinanceFeeds
-    interval: s10
+    interval: s30
     resource_type: timeseries
     selector: root
     type: float64
@@ -105,15 +105,15 @@ ws_api:
         reducer: "lambda epochs: (mean(epochs[0]['bids']) + mean(epochs[0]['asks'])) / 2"
         transformers: ["{self} * {USDTUSDC}", "round2"]
 
-# tcp-fix api collectors
+# tcp-fix api ingesters
 fix_api: []
 
-# evm views collectors
+# evm views ingesters
 evm_caller:
 
   # oracle prices
   - name: ChainlinkPolyFeeds
-    interval: s10
+    interval: s30
     resource_type: timeseries
     type: float64
     fields:
@@ -149,7 +149,7 @@ evm_caller:
         params: []
 
   - name: PythArbFeeds # https://docs.pyth.network/price-feeds/contract-addresses/evm
-    interval: s10
+    interval: s30
     resource_type: timeseries
     target: "42161:0xff1a0f4744e8582DF1aE09D5611b887B6a12925C"
     selector: getPriceUnsafe(bytes32)((int64,uint64,int32,uint256))
@@ -168,7 +168,7 @@ evm_caller:
 
   # ethereum l1 prices
   - name: UniswapEthFeeds
-    interval: s10
+    interval: s30
     resource_type: timeseries
     type: float64
     fields:
@@ -185,7 +185,7 @@ evm_caller:
 
   # base prices
   - name: AerodromeBaseFeeds
-    interval: s10
+    interval: s30
     resource_type: timeseries
     type: float64
     fields:
@@ -199,7 +199,7 @@ evm_caller:
         transformers: ["({self}[1] / {self}[0]) * {ETHUSDC}", "round2"]
 
   - name: QuickSwapPolyFeeds # algebra fork
-    interval: s10
+    interval: s30
     resource_type: timeseries
     type: float64
     fields:
@@ -212,7 +212,7 @@ evm_caller:
         selector: globalState()((uint160,int24,uint16,uint16,uint8,uint8,bool))
         transformers: ["((({self}[0] ** 2) / 2 ** 192) / 1e10) * {ETHUSDC}", "round2"]
 
-# evm events collectors
+# evm events ingesters
 evm_logger:
   - name: UniswapOpSwaps.ETHUSDC
     target: "10:0x85149247691df622eaf1a8bd0cafd40bc45154a9" # WETH/USDC pool
@@ -228,7 +228,7 @@ evm_logger:
       # - { name: liquidity, type: float64, transformers: ["{self}[5]"] }
       # - { name: tick, type: int16, transformers: ["{self}[6]"] }
 
-# non-evm chain collectors
+# non-evm chain ingesters
 solana_caller: []
 solana_logger: []
 sui_caller: []

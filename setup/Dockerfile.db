@@ -149,7 +149,7 @@ COPY --from=redis-base /usr/local/bin/redis-cli /usr/local/bin/redis-cli
 # Configure Redis
 COPY <<EOF /etc/redis/users.acl
 user $DB_ROOT_USER on ~* +@all >$DB_ROOT_PASS
-user $DB_RW_USER on ~* +@all -@dangerous +info +role +dbsize allchannels >$DB_RW_PASS
+user $DB_RW_USER on ~* +@all -@dangerous +info +role +dbsize +keys allchannels >$DB_RW_PASS
 user default off -@all
 
 EOF

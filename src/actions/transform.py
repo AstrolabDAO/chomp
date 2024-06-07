@@ -6,10 +6,9 @@ import numpy as np
 from asyncio import TimeoutError as FutureTimeoutError
 
 import src.state as state
-from src.model import Collector, Resource, ResourceField, Tsdb
+from src.model import Ingester, Resource, ResourceField, Tsdb
+from src.utils import safe_eval, interval_to_delta, log_debug, log_error
 from src.actions.load import load
-from src.safe_eval import safe_eval
-from src.utils import interval_to_delta, log_debug, log_error
 
 BASE_TRANSFORMERS: dict[str, callable] = {
   "lower": lambda r, self: str(self).lower(),
@@ -55,7 +54,7 @@ SERIES_TRANSFORMERS: dict[str, callable] = {
 }
 
 # TODO: optimize
-def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> any:
+def apply_transformer(c: Ingester, field: ResourceField, transformer: str) -> any:
   if not transformer:
     return field.value
 
@@ -100,21 +99,21 @@ def apply_transformer(c: Collector, field: ResourceField, transformer: str) -> a
   # eval the transformer after injecting all computed values
   return safe_eval(transformer.format(self=field.value, **c.data_by_field)) # TODO: precompile
 
-def transform(c: Collector, f: ResourceField) -> any:
+def transform(c: Ingester, f: ResourceField) -> any:
   for t in f.transformers or []:
     f.value = apply_transformer(c, f, t)
   c.data_by_field[f.name] = f.value
   return f.value
 
-def transform_all(c: Collector) -> int:
-  tp = state.get_thread_pool()
+def transform_all(c: Ingester) -> int:
+  tp = state.thread_pool
   count = 0
   for field in c.fields:
     try:
       tp.submit(transform, c, field).result(timeout=2)
       count += 1
     except (FutureTimeoutError, Exception):
-      log_error(f"{c.name}.{field.name} transformer timeout, check {c.collector_type} output and transformer chain")
+      log_error(f"{c.name}.{field.name} transformer timeout, check {c.ingester_type} output and transformer chain")
 
   if state.args.verbose:
     log_debug(f"Transformed {c.name} -> {c.data_by_field}")

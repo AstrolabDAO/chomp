@@ -39,8 +39,12 @@ pdm install
 # Start tiny Chomp ingestion cluster
 echo "Starting up Chomp ingestion cluster ($TEST_INSTANCES instances)..."
 for ((i = 1; i <= TEST_INSTANCES; i++)); do
-    pdm run python main.py -v -e .env.test -c ./examples/oracle-feeds.yml -j 1 >/dev/null 2>&1 &
+    pdm run python main.py -v -e .env.test -c ./examples/diverse.yml -j 2 >/dev/null 2>&1 &
 done
+
+# Start single Chomp server node
+echo "Starting up Chomp server node..."
+pdm run python main.py -v -e .env.test -c ./examples/diverse.yml -s >/dev/null 2>&1 &
 
 # Perpetual tail of out.log until interrupts
 echo "Streaming outputs from ./out.log..."

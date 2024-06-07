@@ -4,15 +4,13 @@ from asyncio import gather, Task, sleep
 import json
 import websockets
 
-from src.model import Collector, ResourceField, Tsdb
-from src.utils import floor_utc, log_debug, log_error, log_warn, select_nested
-from src.actions.store import store
-from src.actions.transform import transform
+from src.model import Ingester, ResourceField, Tsdb
+from src.utils import log_debug, log_error, log_warn, select_nested, floor_utc, safe_eval
+from src.actions import store, transform, scheduler
 from src.cache import claim_task, ensure_claim_task
-from src.safe_eval import safe_eval
 import src.state as state
 
-async def schedule(c: Collector) -> list[Task]:
+async def schedule(c: Ingester) -> list[Task]:
 
   epochs_by_route: dict[str, deque[dict]] = {}
   default_handler_by_route: dict[str, callable] = {}
@@ -20,7 +18,7 @@ async def schedule(c: Collector) -> list[Task]:
   subscriptions = set()
 
   # sub function (one per route)
-  async def subscribe(c: Collector, field: ResourceField, route_hash: str):
+  async def subscribe(c: Ingester, field: ResourceField, route_hash: str):
 
     url = field.target
     if state.args.verbose:
@@ -76,8 +74,8 @@ async def schedule(c: Collector) -> list[Task]:
         sleep_time = state.args.retry_cooldown * retry_count
         await sleep(sleep_time)
 
-  # collect function (one per collector)
-  async def collect(c: Collector):
+  # collect function (one per ingester)
+  async def ingest(c: Ingester):
     await ensure_claim_task(c)
     # batch of reducers/transformers by route
     # iterate over key/value pairs
@@ -86,7 +84,7 @@ async def schedule(c: Collector) -> list[Task]:
       url = batch[0].target
       epochs = epochs_by_route.get(url, None)
       if not epochs or not epochs[0]:
-        log_warn(f"Missing state for {c.name} {url} collection, skipping...")
+        log_warn(f"Missing state for {c.name} {url} ingestion, skipping...")
         continue
       collected_batches += 1
       for field in batch:
@@ -109,9 +107,9 @@ async def schedule(c: Collector) -> list[Task]:
         log_debug(f"Appending epoch {len(epochs)} to {c.name}...")
       epochs.appendleft({}) # new epoch
     if state.args.verbose:
-      log_debug(f"{c.name} collector state:\n{c.data_by_field}")
+      log_debug(f"{c.name} ingester state:\n{c.data_by_field}")
     if collected_batches > 0:
-      c.collection_time = floor_utc(c.interval) # round down to theoretical task time
+      c.ingestion_time = floor_utc(c.interval) # round down to theoretical task time
       await store(c)
     else:
       log_warn(f"No data collected for {c.name}, waiting for ws state to aggregate...")
@@ -150,5 +148,5 @@ async def schedule(c: Collector) -> list[Task]:
   # subscribe all at once, run in the background
   gather(*tasks)
 
-  # register/schedule the collector
-  return [await state.scheduler.add_collector(c, fn=collect, start=False)]
+  # register/schedule the ingester
+  return [await scheduler.add_ingester(c, fn=ingest, start=False)]

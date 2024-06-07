@@ -1,13 +1,14 @@
-# TODO: finish+test this adapter
+# TODO: finish+test
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Optional
 import asyncpg
 from dataclasses import dataclass
 from os import environ as env
+from dateutil.relativedelta import relativedelta
 
-from src.utils import interval_to_sql, log_error, log_info, log_warn
-from src.model import Collector, FieldType, Interval, Tsdb, TimeUnit
+from src.utils import log_error, log_info, log_warn, Interval, TimeUnit, interval_to_sql
+from src.model import Ingester, FieldType, Tsdb
 
 # Define the data types mapping
 TYPES: dict[FieldType, str] = {
@@ -118,7 +119,7 @@ class TimescaleDb(Tsdb):
       user=self.user, password=self.password
     )
 
-  async def create_table(self, c: Collector, name: str = "", force: bool = False):
+  async def create_table(self, c: Ingester, name: str = "", force: bool = False):
     table = name or c.name
     fields = ", ".join([f"{field.name} {TYPES[field.type]}" for field in c.fields])
     sql = f"""
@@ -135,25 +136,25 @@ class TimescaleDb(Tsdb):
       log_error(f"Failed to create table {self.db}.{table}", e)
       raise e
 
-  async def insert(self, c: Collector, table: str = ""):
+  async def insert(self, c: Ingester, table: str = ""):
     table = table or c.name
     persistent_data = [field for field in c.fields if not field.transient]
     fields = ", ".join(field.name for field in persistent_data)
     values_tpl = ", ".join([f"${i+2}" for i in range(len(persistent_data))])
     insert_query = f"INSERT INTO {table} (ts, {fields}) VALUES ($1, {values_tpl})"
     try:
-      await self.pool.execute(insert_query, c.collection_time, *[field.value for field in persistent_data])
+      await self.pool.execute(insert_query, c.ingestion_time, *[field.value for field in persistent_data])
     except asyncpg.UndefinedTableError as e:
       e = str(e).lower()
       if "relation" in e and "does not exist" in e:
         log_warn(f"Table {self.db}.{table} does not exist, creating it now...")
         await self.create_table(c, name=table)
-        await self.pool.execute(insert_query, c.collection_time, *[field.value for field in persistent_data])
+        await self.pool.execute(insert_query, c.ingestion_time, *[field.value for field in persistent_data])
       else:
         log_error(f"Failed to insert data into {self.db}.{table}", e)
         raise e
 
-  async def insert_many(self, c: Collector, values: list[tuple], table: str = ""):
+  async def insert_many(self, c: Ingester, values: list[tuple], table: str = ""):
     table = table or c.name
     persistent_fields = [field for field in c.fields if not field.transient]
     fields = ", ".join([field.name for field in persistent_fields])
@@ -173,9 +174,9 @@ class TimescaleDb(Tsdb):
         raise e
 
   # TODO: use window functions, continuous aggregates + real time aggregates for max performance
-  async def fetch(self, table: str, from_date: Optional[datetime], to_date: Optional[datetime], aggregation_interval: Optional[str], columns: list[str] = []):
-    if not to_date:
-        to_date = datetime.now()
+  async def fetch(self, table: str, from_date: datetime=None, to_date: datetime=None, aggregation_interval: Interval="m5", columns: list[str] = []):
+    to_date = to_date or datetime.now(UTC)
+    from_date = from_date or to_date - relativedelta(years=10)
 
     agg_bucket = interval_to_sql(aggregation_interval)
 

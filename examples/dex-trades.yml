@@ -19,7 +19,7 @@ evm_logger:
       # - { name: liquidity, type: float64, transformers: ["{self}[5]"] }
       # - { name: tick, type: int16, transformers: ["{self}[6]"] }
 
-# non-evm chain collectors
+# non-evm chain ingesters
 solana_caller: []
 solana_logger: []
 sui_caller: []

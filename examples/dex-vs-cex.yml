@@ -652,7 +652,7 @@ evm_caller:
   #       transformers: ["(({self}[0] ** 2 / 2 ** 192) / 1e10) * {ETHUSDC}", "round2"]
 
 evm_logger: []
-# non-evm chain collectors
+# non-evm chain ingesters
 solana_caller: []
 solana_logger: []
 sui_caller: []
