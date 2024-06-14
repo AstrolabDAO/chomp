@@ -36,6 +36,7 @@ field:
 
 ingester:
   <<: *targettable
-  interval: enum('s2', 's5', 's10', 's20', 's30', 'm1', 'm2', 'm5', 'm10', 'm15', 'm30', 'h1', 'h4', 'h12', 'D1', 'D2', 'D3', 'W1', 'M1', 'Y1')
+  interval: enum('s2', 's5', 's10', 's20', 's30', 'm1', 'm2', 'm5', 'm10', 'm15', 'm30', 'h1', 'h4', 'h6', 'h12', 'D1', 'D2', 'D3', 'W1', 'M1', 'Y1')
+  probability: float(required=False, min=0, max=1)
   resource_type: enum('timeseries', 'value', 'series', required=False)
   fields: list(include('field'))

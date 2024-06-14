@@ -2,6 +2,7 @@
 from asyncio import gather, iscoroutinefunction, iscoroutine
 from os import environ as env
 import pickle
+from random import random
 
 from src.model import Ingester
 import src.state as state
@@ -26,7 +27,9 @@ async def claim_task(c: Ingester, until=0, key="") -> bool:
 
 async def ensure_claim_task(c: Ingester, until=0) -> bool:
   if not await claim_task(c, until):
-    raise ValueError(f"Failed to claim task {c.name}.{c.interval})")
+    raise ValueError(f"Failed to claim task {c.name}.{c.interval}): probably claimed by another worker")
+  if c.probablity < 1.0 and random() > c.probablity:
+    raise ValueError(f"Task {c.name}.{c.interval} was probabilistically skipped")
 
 async def is_task_claimed(c: Ingester, exclude_self=False, key="") -> bool:
   key = key or claim_key(c)

@@ -11,7 +11,7 @@ def get_scheduler(ingestor_type: IngesterType) -> callable:
   import src.ingesters as ingesters # runtime circular import (could use pacage name reflection)
   # mapping of available ingesters to their respective functions
   SCHEDULER_BY_TYPE: dict[IngesterType, callable] = {
-    "scrapper": ingesters.scrapper.schedule,
+    "scrapper": ingesters.static_scrapper.schedule,
     "http_api": ingesters.http_api.schedule,
     "ws_api": ingesters.ws_api.schedule,
     "evm_caller": ingesters.evm_caller.schedule,

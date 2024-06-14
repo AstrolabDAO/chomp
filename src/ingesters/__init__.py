@@ -1,4 +1,4 @@
-from . import scrapper
+from . import static_scrapper
 from . import http_api
 from . import ws_api
 # from . import fix_api

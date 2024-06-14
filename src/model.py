@@ -44,11 +44,12 @@ class Targettable:
   type: FieldType = "float64"
   handler: str = "" # for streams only (json ws, fix...)
   reducer: str = "" # for streams only (json ws, fix...)
+  actions: list[any] = field(default_factory=list) # for dynamic scrappers only
   transformers: list[str] = field(default_factory=list)
 
   @property
   def target_id(self) -> str:
-    return md5((self.name + self.target + self.selector + str(self.params)).encode()).hexdigest()
+    return md5((self.target + self.selector + str(self.params) + str(self.actions) + self.handler).encode()).hexdigest()
 
 @dataclass
 class ResourceField(Targettable):
@@ -99,6 +100,7 @@ class Resource:
 @dataclass
 class Ingester(Resource, Targettable):
   interval: Interval = "h1"
+  probablity: float = 1.0
   ingester_type: IngesterType = "evm_caller"
   ingestion_time: datetime = None
   cron: Optional[Cron] = None

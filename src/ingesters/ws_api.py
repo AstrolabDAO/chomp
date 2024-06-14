@@ -140,6 +140,7 @@ async def schedule(c: Ingester) -> list[Task]:
       batched_fields_by_route.setdefault(route_hash, []).append(field)
       if not route_hash in default_handler_by_route and field.handler:
         default_handler_by_route[route_hash] = field.handler
+      # TODO: make sure that double subscriptions are not made possible since field.name is not part of the hash anymore
       if field.target_id in subscriptions:
         continue # only subscribe once per socket route+selector+params combo
       subscriptions.add(field.target_id)
