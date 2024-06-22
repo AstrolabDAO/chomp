@@ -4,7 +4,7 @@ from hashlib import md5
 from aiocron import Cron
 from typing import Literal, Optional, Type
 
-from src.utils import Interval, TimeUnit, extract_time_unit, interval_to_seconds, split_chain_addr, fmt_date
+from src.utils import Interval, TimeUnit, extract_time_unit, interval_to_seconds, split_chain_addr, fmt_date, function_signature
 
 ResourceType = Literal[
   "value", # e.g., inplace document (json/text), binary, int, float, date, string...
@@ -49,7 +49,7 @@ class Targettable:
 
   @property
   def target_id(self) -> str:
-    return md5((self.target + self.selector + str(self.params) + str(self.actions) + self.handler).encode()).hexdigest()
+    return md5((self.target + self.selector + str(self.params) + str(self.actions) + function_signature(self.handler)).encode()).hexdigest()
 
 @dataclass
 class ResourceField(Targettable):

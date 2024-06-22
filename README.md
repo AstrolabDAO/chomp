@@ -123,7 +123,7 @@ NB: the taos client should be compatible with [./setup/Dockerfile.db:{taos_image
 ##### Single Instance
 
 ```bash
-pdm python main.py -e .env.example -c ./examples/diverse.yml -j 16
+pdm run python main.py -e .env.test -c ./examples/diverse.yml -j 16
 ```
 
 ##### Clustering
@@ -131,7 +131,7 @@ pdm python main.py -e .env.example -c ./examples/diverse.yml -j 16
 Just spawn more instances, they'll automatically sync and pick up leftover jobs
 
 ```bash
-for i in {1..5}; do pdm python main.py -e .env.example -j 5 & sleep 5; done
+for i in {1..5}; do pdm run python main.py -e .env.test -j 5 & sleep 5; done
 ```
 
 #### Server Mode
@@ -140,7 +140,7 @@ Just add the `-s`/`--server` flag to start a server instance.
 It will expose all of `-c` ingested resources, both as http api and websocket api.
 
 ```bash
-pdm python main.py -e .env.example -c ./examples/diverse.yml --server
+pdm run python main.py -e .env.test -c ./examples/diverse.yml --server
 ```
 
 ### Docker Image Setup (Docker/Kubernetes)

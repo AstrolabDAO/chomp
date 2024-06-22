@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from dateutil import parser
 from hashlib import md5, sha256
 import logging
@@ -36,6 +36,11 @@ def parse_date(date: str|int):
   try:
     if is_float(date):
       return datetime.fromtimestamp(rebase_epoch_to_sec(float(date)), tz=UTC)
+    match date.lower():
+      case "now": return datetime.now(UTC)
+      case "today": return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+      case "yesterday": return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+      case "tomorrow": return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     parsed = parser.parse(date, fuzzy_with_tokens=True, ignoretz=False)[0]
     if not parsed.tzinfo:
       parsed = parsed.replace(tzinfo=UTC)
@@ -86,3 +91,16 @@ def prettify(data, headers):
   row_fmt = "| " + " | ".join(f"{{:<{w}}}" for w in col_widths) + " |"
   x_sep = "+" + "+".join(["-" * (col_width + 2) for col_width in col_widths]) + "+\n"
   return x_sep + row_fmt.format(*headers) + "\n" + x_sep + "\n".join(row_fmt.format(*row) for row in data) + "\n" + x_sep
+
+def function_signature(fn):
+  if isinstance(fn, str):
+    return fn
+  elif callable(fn):
+    try:
+      return f"{fn.__name__}({', '.join(fn.__code__.co_varnames)})"
+    except AttributeError:
+      pass
+  try:
+    return fn.__code__.co_code
+  except AttributeError:
+    return repr(fn)

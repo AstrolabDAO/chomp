@@ -13,7 +13,7 @@ class JSONResponse(Response):
     self.headers["Content-Type"] += "; charset=utf-8"
 
   def render(self, content: any) -> bytes:
-    return orjson.dumps(content)
+    return orjson.dumps(content, option=orjson.OPT_SERIALIZE_NUMPY | orjson.OPT_SERIALIZE_DATACLASS)
 
 def error_response(exc: Exception, code=400, message="Bad Request"):
   exc = exc.__dict__

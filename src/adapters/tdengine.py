@@ -154,6 +154,24 @@ class Taos(Tsdb):
       log_error(f"Failed to create table {self.db}.{table}", e)
       raise e
 
+  async def alter_table(self, table: str, add_columns: list[tuple[str, str]] = [], drop_columns: list[str] = []):
+    await self.ensure_connected()
+    for column_name, column_type in add_columns:
+      try:
+        self.cursor.execute(f"ALTER TABLE {self.db}.`{table}` ADD COLUMN `{column_name}` {TYPES[column_type]};")
+        log_info(f"Added column {column_name} of type {column_type} to {self.db}.{table}")
+      except Exception as e:
+        log_error(f"Failed to add column {column_name} to {self.db}.{table}", e)
+        raise e
+
+    for column_name in drop_columns:
+      try:
+        self.cursor.execute(f"ALTER TABLE {self.db}.`{table}` DROP COLUMN `{column_name}`;")
+        log_info(f"Dropped column {column_name} from {self.db}.{table}")
+      except Exception as e:
+        log_error(f"Failed to drop column {column_name} from {self.db}.{table}", e)
+        raise e
+
   async def insert(self, c: Ingester, table=""):
     await self.ensure_connected()
     table = table or c.name
@@ -164,10 +182,18 @@ class Taos(Tsdb):
     try:
       self.cursor.execute(sql)
     except Exception as e:
-      if "Table does not exist" in str(e):
+      error_message = str(e).lower()
+      if "table does not exist" in error_message:
         log_warn(f"Table {self.db}.{table} does not exist, creating it now...")
         await self.create_table(c, name=table)
-        self.cursor.execute(sql)
+        await self.insert(c, table=table)
+      elif "invalid column name" in error_message or "statement too long" in error_message:
+        log_warn(f"Column mismatch detected, altering table {self.db}.{table} to add missing columns...")
+        existing_columns = await self.get_columns(table)
+        existing_column_names = [col[0] for col in existing_columns]
+        add_columns = [(field.name, field.type) for field in persistent_data if field.name not in existing_column_names]
+        await self.alter_table(table, add_columns=add_columns)
+        await self.insert(c, table=table)
       else:
         log_error(f"Failed to insert data into {self.db}.{table}", e)
         raise e
@@ -186,8 +212,12 @@ class Taos(Tsdb):
     stmt.execute()
 
   async def get_columns(self, table: str) -> list[tuple[str, str, str]]:
-    self.cursor.execute(f"DESCRIBE {self.db}.`{table}`;")
-    return self.cursor.fetchall()
+    try:
+      self.cursor.execute(f"DESCRIBE {self.db}.`{table}`;")
+      return self.cursor.fetchall()
+    except Exception as e:
+      log_error(f"Failed to get columns from {self.db}.{table}", e)
+      return []
 
   async def fetch(self, table: str, from_date: datetime=None, to_date: datetime=None, aggregation_interval: Interval="m5", columns: list[str] = []):
 
@@ -196,6 +226,10 @@ class Taos(Tsdb):
     columns = columns or await get_or_set_cache(f"{table}:columns",
       callback=lambda: self.get_columns(table),
       expiry=300, pickled=True) # 5 mins cache
+
+    if not columns:
+      log_warn(f"No columns found for table {self.db}.{table}")
+      return []
 
     select_cols = ", ".join([f"last(`{col[0]}`) AS {col[0]}" for col in columns])
     conditions = [

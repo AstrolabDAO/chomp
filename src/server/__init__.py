@@ -16,6 +16,7 @@ async def lifespan(app: FastAPI):
 
 # TODO: these should be configurable as well as endpoints ppr
 DEFAULT_LIMITS = {
+  'whitelist': ['0.0.0.0', '127.0.0.1', 'localhost'],
   'rpm': 60, 'rph': 1200, 'rpd': 9600, # 1/.3/.1 logarithmic req caps (burst protection)
   'spm': 1e8, 'sph': 2e9, 'spd': 1.6e10, # 1/.3/.1 logarithmic bandwidth caps (burst protection)
   'ppm': 60, 'pph': 1200, 'ppd': 9600, # 1/.3/.1 logarithmic points caps (burst protection)
