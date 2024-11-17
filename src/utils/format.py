@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser
 from hashlib import md5, sha256
 import logging
@@ -7,6 +7,8 @@ from typing import Literal
 from web3 import Web3
 
 from src.utils.types import is_float
+
+UTC = timezone.utc
 
 DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
 DATETIME_FMT_TZ = f"{DATETIME_FMT} %Z"

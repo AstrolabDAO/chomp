@@ -1,0 +1,43 @@
+# Use Python base image
+FROM python:3.10-slim
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PDM_IGNORE_SAVED_PYTHON=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PDM_USE_VENV=0
+
+# Set the working directory
+WORKDIR /app
+
+# Copy only pyproject.toml and pdm.lock (if exists) first
+COPY pyproject.toml pdm.lock* ./
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    gcc \
+    libffi-dev \
+    libssl-dev \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Update pip and install PDM
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir pdm
+
+# Install dependencies using PDM
+RUN pdm install --prod --no-self && \
+    pdm config python.use_venv false
+
+# Copy the rest of the application code
+COPY . .
+
+# Make main.py executable
+RUN chmod +x main.py
+
+# Entrypoint for running app
+ENTRYPOINT ["python", "main.py"]
+
+# Specify default command: API server
+CMD ["-v", "-s"]

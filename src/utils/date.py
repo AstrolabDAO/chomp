@@ -1,7 +1,9 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import re
 from typing import Literal
 from dateutil.relativedelta import relativedelta
+
+UTC = timezone.utc
 
 # below are based on ISO 8601 capitalization (cf. https://en.wikipedia.org/wiki/ISO_8601)
 TimeUnit = Literal["ns", "us", "ms", "s", "m", "h", "D", "W", "M", "Y"]

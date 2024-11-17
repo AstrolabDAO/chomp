@@ -1,7 +1,7 @@
 # TODO: finish+test
 
 from os import environ as env
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Optional
 from pykx import Kdb as _Kdb, KdbException
 from dateutil.relativedelta import relativedelta
@@ -9,6 +9,8 @@ from dateutil.relativedelta import relativedelta
 from src.utils.format import log_info, log_error, log_warn
 from src.utils.date import Interval, TimeUnit
 from src.model import Ingester, FieldType, Tsdb
+
+UTC = timezone.utc
 
 # Define the data types mapping
 TYPES: dict[FieldType, str] = {

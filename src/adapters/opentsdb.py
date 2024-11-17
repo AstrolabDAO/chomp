@@ -1,13 +1,15 @@
 # TODO: finish+test
 
 from os import environ as env
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Optional
 from opentsdb.client import OpenTSDB_ADAPTERClient
 from opentsdb.query import Query
 from dateutil.relativedelta import relativedelta
 
 from src.model import Ingester, Interval
+
+UTC = timezone.utc
 
 INTERVAL_TO_OPENTSDB_ADAPTER: dict[Interval, str] = {
   "m1": "1m",

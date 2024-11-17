@@ -1,5 +1,5 @@
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from dateutil.relativedelta import relativedelta
@@ -12,6 +12,8 @@ from src.server.middlewares.limiter import Limiter, limit, requester_id
 import src.cache as cache
 from src.cache import NS as REDIS_NS
 from src.server.responses import JSONResponse
+
+UTC = timezone.utc
 
 router = APIRouter()
 

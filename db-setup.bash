@@ -1,5 +1,7 @@
 #!/bin/bash
 source .env.test
+source .env
+set -e
 
 if [ "$EUID" -ne 0 ]; then
     echo "This script must be run with sudo."
@@ -9,13 +11,11 @@ fi
 echo "Building $DB_IMAGE image..."
 docker build -f Dockerfile.db -t $DB_IMAGE . --no-cache
 
-# Check if the container is already running
-if docker ps -a --format '{{.Names}}' | grep -q "^${DB_TEST_CONTAINER}$"; then
-    echo "Container $DB_TEST_CONTAINER already exists, stopping and deleting..."
-    # Stop the container if it's running
-    docker stop $DB_TEST_CONTAINER
-    # Remove the container
-    docker rm $DB_TEST_CONTAINER
+# Clear if the container is already running
+if docker ps -a --format '{{.Names}}' | grep -q "^${DB_CONTAINER}$"; then
+    echo "Container $DB_CONTAINER already exists, stopping and deleting..."
+    docker stop $DB_CONTAINER
+    docker rm $DB_CONTAINER
 fi
 
 # Check if the network already exists
@@ -27,8 +27,8 @@ else
 fi
 
 # Run the new container instance
-echo "Starting $DB_TEST_CONTAINER container..."
-docker run -d --env-file .env.test --network $DOCKER_NET --name $DB_TEST_CONTAINER -p $REDIS_PORT:$REDIS_PORT -p $TAOS_PORT:$TAOS_PORT -p $TAOS_HTTP_PORT:$TAOS_HTTP_PORT $DB_IMAGE
+echo "Starting $DB_CONTAINER container..."
+docker run -d --env-file .env.test --network $DOCKER_NET --name $DB_CONTAINER -p $REDIS_PORT:$REDIS_PORT -p $TAOS_PORT:$TAOS_PORT -p $TAOS_HTTP_PORT:$TAOS_HTTP_PORT $DB_IMAGE
 
 # Wait 5s for the db to start
 sleep 5

@@ -204,6 +204,8 @@ class Tsdb:
   @classmethod
   async def connect(cls, host: str, port: int, db: str, user: str, password: str):
     raise NotImplementedError
+  async def ping(self):
+    raise NotImplementedError
   async def ensure_connected(self):
     raise NotImplementedError
   async def close(self):
@@ -225,4 +227,6 @@ class Tsdb:
   async def fetch_batch(self, tables: list[str], from_date: datetime, to_date: datetime, aggregation_interval: Interval, columns: list[str]):
     raise NotImplementedError
   async def commit(self):
+    raise NotImplementedError
+  async def list_tables(self) -> list[str]:
     raise NotImplementedError

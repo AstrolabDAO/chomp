@@ -1,14 +1,15 @@
-from asyncio import gather
-from datetime import UTC, datetime
+from asyncio import gather, sleep
+from datetime import datetime, timezone
 from os import environ as env
-from cache import get_or_set_cache
 from taos import TaosConnection, TaosCursor, TaosResult, TaosStmt, connect, new_bind_params, new_multi_binds
 from dateutil.relativedelta import relativedelta
 
+from src.cache import get_or_set_cache
 from src.utils import log_error, log_info, log_warn, Interval, TimeUnit, interval_to_sql, fmt_date, ago
 from src.model import Ingester, FieldType, Resource, Tsdb
 import src.state as state
 
+UTC = timezone.utc
 
 TYPES: dict[FieldType, str] = {
   "int8": "tinyint", # 8 bits char
@@ -83,6 +84,15 @@ class Taos(Tsdb):
     await self.ensure_connected()
     return self
 
+  async def ping(self) -> bool:
+    try:
+      await self.ensure_connected()
+      self.cursor.execute("SHOW DATABASES;")
+      return True
+    except Exception as e:
+      log_error("TDengine ping failed", e)
+      return False
+
   async def close(self):
     if self.cursor:
       self.cursor.close()
@@ -101,9 +111,12 @@ class Taos(Tsdb):
         )
       except Exception as e:
         e = str(e).lower()
-        if "database" in e and "not exist" in e:
-          self.conn = connect(host=self.host, port=self.port, user=self.user, password=self.password)
+        if "not exist" in e:
           log_warn(f"Database '{self.db}' does not exist on {self.host}:{self.port}, creating it now...")
+          self.conn = connect(host=self.host, port=self.port, user=self.user, password=self.password) # co without db
+          self.cursor = self.conn.cursor()
+          if not self.conn:
+            raise ValueError(f"Failed to connect to TDengine on {self.user}@{self.host}:{self.port}")
           await self.create_db(self.db)
         if not self.conn:
           raise ValueError(f"Failed to connect to TDengine on {self.user}@{self.host}:{self.port}/{self.db}")
@@ -122,14 +135,27 @@ class Taos(Tsdb):
     return self.cursor.fetchall()
 
   async def create_db(self, name: str, options={}, force=False):
-    await self.ensure_connected()
     base = "CREATE DATABASE IF NOT EXISTS" if force else "CREATE DATABASE"
-    try:
-      self.cursor.execute(f"{base} {name} PRECISION '{PRECISION}' BUFFER 256 KEEP 3650d;") # 10 years max archiving
+    max_retries = 10
+    i = 0
+    for i in range(max_retries):
+      try:
+        self.cursor.execute(f"{base} {name} PRECISION '{PRECISION}' BUFFER 256 KEEP 3650d;")  # 10 years max archiving
+        break
+      except Exception as e:
+        log_warn(f"Retrying to create database {name} in {i}/{max_retries} ({e})...")
+        await sleep(1)
+    if i != max_retries:
       log_info(f"Created database {name} with time precision {PRECISION}")
-    except Exception as e:
-      log_error(f"Failed to create database {name} with time precision {PRECISION}", e)
-      raise e
+      for i in range(max_retries): # readiness check
+        try:
+          self.cursor.execute(f"USE {name};")
+          log_info(f"Database {name} is now ready.")
+          return
+        except Exception as e:
+          log_warn(f"Retrying to use database {name} in {i}/{max_retries} ({e})...")
+          await sleep(1)
+    raise ValueError(f"Database {name} readiness check failed.")
 
   async def use_db(self, db: str):
     if not self.conn:
@@ -254,6 +280,10 @@ class Taos(Tsdb):
   async def fetch_all(self, query: str) -> TaosResult:
     self.cursor.execute(query)
     return self.cursor.fetchall()
+
+  async def list_tables(self) -> list[str]:
+    self.cursor.execute("USE {self.db}; SHOW TABLES;") 
+    return [table[0] for table in self.cursor.fetchall()]
 
   async def commit(self):
     self.conn.commit()

@@ -59,6 +59,19 @@ async def start_server(config: Config):
   await start()
 
 async def main(ap: ArgParser):
+  state.init(args_=ap.load_env())
+  log_info(f"Arguments\n{ap.pretty()}")
+
+  # pinging for readiness checks
+  if state.args.ping:
+    db_ok, cache_ok = await gather(state.tsdb.ping(), state.cache.ping())
+    log_info(f"Connected to DB: {db_ok}, Cache: {cache_ok}")
+    if db_ok and cache_ok:
+      exit(0)
+    else:
+      exit(1)
+
+  # reload(state) # update state import to include .env values
   tsdb_class = get_adapter_class(state.args.tsdb_adapter)
   if not tsdb_class:
     raise ValueError(
@@ -103,11 +116,9 @@ if __name__ == "__main__":
     "Server runtime": [
       (("-s", "--server"), bool, False, 'store_true', "Run as server (ingester by default)"),
       (("-sh", "--host"), str, "127.0.0.1", None, "FastAPI server host"),
-      (("-sp", "--port"), int, 8000, None, "FastAPI server port"),
+      (("-sp", "--port"), int, 40004, None, "FastAPI server port"),
       (("-wpi", "--ws_ping_interval"), int, 30, None, "Websocket server ping interval"),
-      (("-wpt", "--ws_ping_timeout"), int, 20, None, "Websocket server ping timeout")
+      (("-wpt", "--ws_ping_timeout"), int, 20, None, "Websocket server ping timeout"),
+      (("-pi", "--ping"), bool, False, 'store_true', "Ping DB and cache for readiness")
     ]})
-  state.init(args_=ap.load_env())
-  log_info(f"Arguments\n{ap.pretty()}")
-  # reload(state) # update state import to include .env values
   run(main(ap))

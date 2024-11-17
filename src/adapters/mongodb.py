@@ -5,11 +5,13 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from pymongo.database import Database
 from typing import Optional
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
 from src.utils import log_info, Interval
 from src.model import Ingester, Tsdb
+
+UTC = timezone.utc
 
 INTERVAL_TO_MONGO: dict[Interval, str] = {
   "m1": "1m",

@@ -1,4 +1,4 @@
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 import pickle
 from typing import Optional
 
@@ -8,6 +8,8 @@ import src.state as state
 from src.model import Ingester
 from src.cache import cache, pub
 from src.actions.transform import transform_all
+
+UTC = timezone.utc
 
 async def store(c: Ingester, table="", publish=True) -> list:
   data = pickle.dumps(c.values_dict())

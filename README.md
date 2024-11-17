@@ -22,7 +22,7 @@ Chomp is a small creature with unquenchable craving for data.
 It allows anyone to set up a data back-end and ETL pipelines in minutes, all from a simple YAML configuration file.
 - Lightweight, you can self-host Chomp on a Raspberry Pi 4, its built-in sync makes it cluster-native.
 - A faster alternative to [Ponder](https://ponder.sh/) and [TheGraph](https://thegraph.com/) if you need to track your protocol's activity in real time.
-- Plug and play, test it now! `cd ./setup && ./test-setup.bash`
+- Plug and play, test it now! `bash ./full-setup.bash`
 - An out-of-the-box http and websocket API to expose all your ingested data
 
 #### Chomp is not:
@@ -73,7 +73,7 @@ The following have been drafted, but remain untested
 Test a full setup (clustered ingesters + server), all at once:
 
 ```bash
-cd ./setup && sudo bash ./test-setup.bash
+sudo bash ./full-setup.bash
 ```
 
 ### Default Backend Docker Setup
@@ -83,15 +83,24 @@ cd ./setup && sudo bash ./test-setup.bash
 
 2. **Build the Backend Image, Start it, Test it:**
    ```bash
-   cd ./setup
-   bash ./db-setup.bash
+   sudo bash ./db-setup.bash
+   ```
+
+### Core Setup (API+Ingesters)
+
+1. **Prepare the Environment:**
+   Ensure Docker is installed on your system.
+
+2. **Build the Core Image, Start it, Test it:**
+   ```bash
+   sudo bash ./core-setup.bash
    ```
 
 ### Local Installation with PDM
 
 0. **Clone the Repository:**
    ```bash
-   git clone https://github.com/yourusername/chomp.git
+   git clone https://github.com/AstrolabDAO/chomp.git
    cd chomp
    ```
 
@@ -143,10 +152,6 @@ It will expose all of `-c` ingested resources, both as http api and websocket ap
 pdm run python main.py -e .env.test -c ./examples/diverse.yml --server
 ```
 
-### Docker Image Setup (Docker/Kubernetes)
-
-🚧: A Chomp docker image will be available at [./setup/Dockerfile.worker](./setup/Dockerfile.worker)
-
 ## Configuration
 
 Chomp is config-based, and as such, its only limit is your capability to configure it.
@@ -189,20 +194,10 @@ TAOS_HTTP_PORT=40003      # TDengine HTTP port
 TAOS_DB="chomp"           # TDengine database name
 
 # evm/non-evm rpc endpoints by id
-1_HTTP_RPCS=rpc.ankr.com/eth,eth.llamarpc.com,endpoints.omniatech.io/v1/eth/mainnet/public
-10_HTTP_RPCS=mainnet.optimism.io,rpc.ankr.com/optimism,optimism.llamarpc.com
-56_HTTP_RPCS=bsc-dataseed.bnbchain.org,rpc.ankr.com/bsc,binance.llamarpc.com
-100_HTTP_RPCS=rpc.gnosischain.com,rpc.ankr.com/gnosis,endpoints.omniatech.io/v1/gnosis/mainnet/public
-137_HTTP_RPCS=rpc-mainnet.matic.network,rpc.ankr.com/polygon,endpoints.omniatech.io/v1/matic/mainnet/public
-238_HTTP_RPCS=rpc.ankr.com/blast,rpc.blastblockchain.com,blast.drpc.org
-250_HTTP_RPCS=rpc.fantom.network,rpc.ankr.com/fantom,1rpc.io/ftm
-1284_HTTP_RPCS=rpc.api.moonbeam.network,rpc.ankr.com/moonbeam,endpoints.omniatech.io/v1/moonbeam/mainnet/public
-5000_HTTP_RPCS=rpc.mantle.xyz,rpc.ankr.com/mantle,1rpc.io/mantle
-8453_HTTP_RPCS=mainnet.base.org,base.llamarpc.com,1rpc.io/base
-42161_HTTP_RPCS=arb1.arbitrum.io/rpc,arbitrum.llamarpc.com,rpc.ankr.com/arbitrum
-43114_HTTP_RPCS=api.avax.network/ext/bc/C/rpc,rpc.ankr.com/avalanche,1rpc.io/avax/c
-59144_HTTP_RPCS=rpc.linea.build,1rpc.io/linea,linea.drpc.org
-534352_HTTP_RPCS=rpc.scroll.io,rpc.ankr.com/scroll,1rpc.io/scroll
+HTTP_RPCS_1=rpc.ankr.com/eth,eth.llamarpc.com,endpoints.omniatech.io/v1/eth/mainnet/public
+HTTP_RPCS_10=mainnet.optimism.io,rpc.ankr.com/optimism,optimism.llamarpc.com
+HTTP_RPCS_56=bsc-dataseed.bnbchain.org,rpc.ankr.com/bsc,binance.llamarpc.com
+...
 ```
 
 ### Ingester Runtime

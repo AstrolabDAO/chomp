@@ -1,6 +1,6 @@
 # TODO: finish+test
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Optional
 import asyncpg
 from dataclasses import dataclass
@@ -9,6 +9,8 @@ from dateutil.relativedelta import relativedelta
 
 from src.utils import log_error, log_info, log_warn, Interval, TimeUnit, interval_to_sql
 from src.model import Ingester, FieldType, Tsdb
+
+UTC = timezone.utc
 
 # Define the data types mapping
 TYPES: dict[FieldType, str] = {

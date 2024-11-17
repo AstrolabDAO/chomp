@@ -31,12 +31,12 @@ class Web3Proxy:
 
   def rpcs(self, chain_id: str | int, load_all=False) -> dict[str | int, list[str]]:
     if load_all and not self._rpcs_by_chain:
-      self._rpcs_by_chain.update({k[:-10]: v.split(",") for k, v in env.items() if k.endswith("_HTTP_RPCS")})
+      self._rpcs_by_chain.update({k[:-10]: v.split(",") for k, v in env.items() if k.startswith("HTTP_RPCS")})
 
     if chain_id not in self._rpcs_by_chain:
-      rpc_env = env.get(f"{chain_id}_HTTP_RPCS")
+      rpc_env = env.get(f"HTTP_RPCS_{chain_id}")
       if not rpc_env:
-        raise ValueError(f"Missing RPC endpoints for chain {chain_id} ({chain_id}_HTTP_RPCS environment variable not found)")
+        raise ValueError(f"Missing RPC endpoints for chain {chain_id} (HTTP_RPCS_{chain_id} environment variable not found)")
       self._rpcs_by_chain[chain_id] = rpc_env.split(",")
     return self._rpcs_by_chain[chain_id]
 

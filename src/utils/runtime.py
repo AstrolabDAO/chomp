@@ -2,18 +2,26 @@ import re
 from asyncio import iscoroutinefunction, new_event_loop
 from importlib import metadata
 from typing import Coroutine, Optional
+from importlib import metadata
 
 from src.utils import log_error, log_warn
 
-
-class PackageMeta():
+class PackageMeta:
   def __init__(self, package="chomp"):
-    dist = metadata.distribution(package)
-    self.name = dist.metadata["Name"]
-    self.version = dist.metadata["Version"]
-    self.version_no_patch = ".".join(self.version.split(".")[:2])
-    self.description = dist.metadata["Summary"]
-    self.authors = dist.metadata.get_all("Author")
+    try:
+      dist = metadata.distribution(package)
+      self.name = dist.metadata["Name"]
+      self.version = dist.metadata["Version"]
+      self.version_no_patch = ".".join(self.version.split(".")[:2])
+      self.description = dist.metadata["Summary"]
+      self.authors = dist.metadata.get_all("Author")
+    except metadata.PackageNotFoundError:
+      print(f"Package {package} not found, using fallback values...")
+      self.name = package
+      self.version = "0.0.0"
+      self.version_no_patch = "0.0"
+      self.description = "No description available"
+      self.authors = ["Unknown"]
 
 def get_meta(package="chomp"):
   metadata.distribution(package)

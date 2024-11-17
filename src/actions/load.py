@@ -1,10 +1,12 @@
-from datetime import datetime, UTC
+from datetime import datetime, timezone
 from typing import Optional
 import numpy as np
 
 from src.model import Ingester
 from src.cache import cache, get_cache
 import src.state as state
+
+UTC = timezone.utc
 
 async def load(c: Ingester, from_date: datetime, to_date: Optional[datetime], aggregation_interval=None) -> Ingester|list|np.ndarray:
   if not to_date:

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from multicall import constants as mc_const
 
+from src.utils.format import log_info
 from src.utils import PackageMeta
 from src.utils.proxies import ThreadPoolProxy, Web3Proxy, TsdbProxy, RedisProxy, ConfigProxy
 
@@ -18,7 +19,7 @@ def init(args_: any):
   global args, meta, thread_pool, rpcs, web3, tsdb, redis, config
   args = args_
   config = ConfigProxy(args)
-  thread_pool = ThreadPoolProxy() # needs config for max_workers
+  thread_pool = ThreadPoolProxy()
   tsdb = TsdbProxy()
   redis = RedisProxy()
   web3 = Web3Proxy()

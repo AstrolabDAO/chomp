@@ -11,6 +11,13 @@ from src.utils import log_debug, log_error, log_warn, YEAR_SECONDS
 
 NS = env.get("REDIS_NS", "chomp")
 
+async def ping() -> bool:
+  try:
+    return await redis.ping()
+  except Exception as e:
+    log_error("Redis ping failed", e)
+    return False
+
 # clustering/synchronization
 def claim_key(c: Ingester) -> str:
   return f"{NS}:claims:{c.id}"
