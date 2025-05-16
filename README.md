@@ -1,3 +1,6 @@
+> ⚠️ **This repository is archived.**  
+> Further development has moved to its actively maintained fork by **BTR Supply**: [https://github.com/btr-supply/chomp](https://github.com/btr-supply/chomp)
+
 <div align="center">
   <img style="border-radius=25px; max-height=250px;" height="400" src="./banner.png" />
   <!-- <h1>Chomp</h1> -->
